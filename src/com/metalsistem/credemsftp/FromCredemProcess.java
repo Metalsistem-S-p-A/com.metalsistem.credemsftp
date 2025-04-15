@@ -14,6 +14,7 @@
  *****************************************************************************/
 package com.metalsistem.credemsftp;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -22,9 +23,12 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-
 import javax.xml.datatype.XMLGregorianCalendar;
-
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathFactory;
 import org.adempiere.base.annotation.Process;
 import org.adempiere.model.MBroadcastMessage;
 import org.bouncycastle.cms.CMSProcessable;
@@ -54,12 +58,13 @@ import org.compiere.process.SvrProcess;
 import org.compiere.util.CLogger;
 import org.compiere.util.Env;
 import org.idempiere.broadcast.BroadcastMsgUtil;
-
-import com.metalsistem.credemsftp.utils.FatturaElettronicaDecoder;
+import org.w3c.dom.Document;
+import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
+import com.metalsistem.credemsftp.model.M_EsitoCredem;
 import com.metalsistem.credemsftp.utils.InvoiceReceived;
 import com.metalsistem.credemsftp.utils.PdfUtils;
 import com.metalsistem.credemsftp.utils.Utils;
-
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.AllegatiType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.CondizioniPagamentoType;
@@ -72,6 +77,7 @@ import it.cnet.idempiere.LIT_E_Invoice.modelXML2.FatturaElettronicaType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.IndirizzoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.ModalitaPagamentoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.TipoDocumentoType;
+import it.cnet.idempiere.LIT_E_Invoice.utilXML.ManageXML_new;
 import it.cnet.idempiere.VATJournalModel.MLITVATDocTypeSequence;
 import it.cnet.idempiere.lettIntent.model.MBPLetterIntent;
 import net.schmizz.sshj.SSHClient;
@@ -175,7 +181,28 @@ public class FromCredemProcess extends SvrProcess {
                     if (inv != null) {
                         saveInvoice(inv);
                         archiveEInvoice(xml, inv);
+                        sftp.rm(entry.getPath());
                     }
+                } else if (parts[0].length() >= 16
+                        && credemId.contains(parts[0].substring(10, 15))) {
+                    // ELABORO ESITO
+                    log.info("Trovato esito " + entry.getName());
+                    byte[] xml = getXml(entry, sftp);
+                    List<M_EsitoCredem> esiti = getDatiEsito(xml);
+                    for (M_EsitoCredem esito : esiti) {
+                        ME_Invoice einv = new Query(getCtx(), ME_Invoice.Table_Name,
+                                "LIT_MsSyncCredem='Y' AND inv.VATDocumentNo = ?  AND inv.isSOTrx='Y' ",
+                                null)
+                                .setParameters(esito.getDocumentNo())
+                                .addJoinClause(
+                                        "join c_invoice inv on inv.c_invoice_id = lit_einvoice.c_invoice_id")
+                                .setClient_ID()
+                                .first();
+                        if (einv != null)
+                            esito.setLIT_EInvoice_ID(einv.get_ID());
+                        esito.saveEx();
+                    }
+                    // sftp.rm(entry.getPath());
                 }
             }
             sftp.close();
@@ -183,6 +210,41 @@ public class FromCredemProcess extends SvrProcess {
             return Utils.getMessage("LIT_MsInfoImportInvResult", importedInvoices,
                     (existingInvoices - importedInvoices));
         }
+    }
+
+
+
+    private List<M_EsitoCredem> getDatiEsito(byte[] xml) throws Exception {
+        ArrayList<M_EsitoCredem> res = new ArrayList<>();
+
+        DocumentBuilderFactory xmlFactory = DocumentBuilderFactory.newInstance();
+        DocumentBuilder builder = xmlFactory.newDocumentBuilder();
+        XPathFactory xPathfactory = XPathFactory.newInstance();
+        XPath xpath = xPathfactory.newXPath();
+
+        Document document = builder.parse(new InputSource(new ByteArrayInputStream(xml)));
+
+        NodeList esiti =
+                (NodeList) xpath.compile("//ESITO").evaluate(document, XPathConstants.NODESET);
+        for (int i = 1; i <= esiti.getLength(); i++) {
+            M_EsitoCredem de = new M_EsitoCredem(getCtx(), 0, null);
+
+            de.setDescription((String) xpath.compile("//ESITO[" + i + "]/Descrizione/text()")
+                    .evaluate(document, XPathConstants.STRING));
+            de.setDocumentNo((String) xpath
+                    .compile("//ESITO[" + i + "]/RiferimentoFattura/NumeroFattura/text()")
+                    .evaluate(document, XPathConstants.STRING));
+            de.setLIT_MsTipoEsito(
+                    Integer.valueOf((String) xpath.compile("//ESITO[" + i + "]/TipoEsito/text()")
+                            .evaluate(document, XPathConstants.STRING)));
+            de.setLIT_MsYearInvoiced(Integer.valueOf((String) xpath
+                    .compile("//ESITO[" + i + "]/RiferimentoFattura/AnnoFattura/text()")
+                    .evaluate(document, XPathConstants.STRING)));
+            de.setName("Esito: " + de.getDocumentNo());
+            res.add(de);
+        }
+
+        return res;
     }
 
     private void archiveEInvoice(byte[] xml, MInvoice inv) {
@@ -224,10 +286,11 @@ public class FromCredemProcess extends SvrProcess {
     }
 
     private void saveInvoice(InvoiceReceived inv) throws Exception {
-        MInvoice res =
-                new Query(getCtx(), MInvoice.Table_Name, "DocumentNo = ?", null).setClient_ID()
-                        .setParameters(inv.getDocumentNo())
-                        .first();
+        // TODO: Controlla colonne db
+        MInvoice res = new Query(getCtx(), MInvoice.Table_Name,
+                "DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?", null).setClient_ID()
+                .setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced())
+                .first();
         if (res == null) {
             inv.saveEx();
             importedInvoices++;
@@ -574,9 +637,11 @@ public class FromCredemProcess extends SvrProcess {
     }
 
     public InvoiceReceived getInvoiceFromXml(byte[] xml, boolean fornitore) throws Exception {
-        FatturaElettronicaDecoder decoder = new FatturaElettronicaDecoder();
-        String fatturaXML = new String(xml);
-        FatturaElettronicaType fattura = decoder.decode(fatturaXML);
+        // FatturaElettronicaDecoder decoder = new FatturaElettronicaDecoder();
+        // String fatturaXML = new String(xml);
+        ManageXML_new manageXml = new ManageXML_new();
+        FatturaElettronicaType fattura =
+                manageXml.importFatturaElettronica(new ByteArrayInputStream(xml));
         return getInvoice(fattura, fornitore);
     }
 
@@ -606,6 +671,7 @@ public class FromCredemProcess extends SvrProcess {
             xml = new byte[xml.length - 3];
             bb.get(xml, 0, xml.length);
         }
+        f.close();
         return xml;
     }
 

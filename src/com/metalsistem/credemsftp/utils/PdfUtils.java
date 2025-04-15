@@ -57,42 +57,6 @@ public class PdfUtils {
 
 		pdf.getCatalog().setLang(new PdfString("it"));
 
-		FontProgramFactory.registerFont(getClass().getResource("helvetica-regular.otf").getPath(), "helvetica");
-		PdfFont font = PdfFontFactory.createRegisteredFont("helvetica", PdfEncodings.IDENTITY_H,
-				EmbeddingStrategy.FORCE_EMBEDDED);
-
-		Table table = null;
-		if (addFooter) {
-			table = new Table(new float[] { 40, 110, 40, 105, 105, 70, 55 });
-
-			table.addCell(new Cell()
-					.add(new Paragraph("FORN.").setFont(font).setFontSize(10).setTextAlignment(TextAlignment.CENTER)));
-			table.addCell(new Cell()
-					.add(new Paragraph("CONTO").setFont(font).setFontSize(10).setTextAlignment(TextAlignment.CENTER)));
-			table.addCell(new Cell()
-					.add(new Paragraph("PAG.").setFont(font).setFontSize(10).setTextAlignment(TextAlignment.CENTER)));
-			table.addCell(new Cell().add(
-					new Paragraph("V. CONTR.").setFont(font).setFontSize(10).setTextAlignment(TextAlignment.CENTER)));
-			table.addCell(new Cell().add(
-					new Paragraph("V. PAG.").setFont(font).setFontSize(10).setTextAlignment(TextAlignment.CENTER)));
-			table.addCell(new Cell().add(
-					new Paragraph("DATA REG.").setFont(font).setFontSize(10).setTextAlignment(TextAlignment.CENTER)));
-			table.addCell(new Cell().add(
-					new Paragraph("N. PROT.").setFont(font).setFontSize(10).setTextAlignment(TextAlignment.CENTER)));
-
-			table.addCell(new Cell().setMinHeight(UnitValue.createPointValue(60))
-					.add(new Paragraph(inv.getDocumentNo()).setFont(font)
-							.setFontSize(10)
-							.setTextAlignment(TextAlignment.CENTER)));
-		}
-		LocalDate dataFatt = LocalDate
-				.from(DateTimeFormatter.ofPattern("yyyy-MM-dd").parse(inv.getDateInvoiced().toString().split(" ")[0]));
-		HeaderHandler headerHandler = new HeaderHandler(inv.getDocumentNo(),
-				dataFatt.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")).toString(), inv.getC_BPartner().getValue(),
-				inv.getC_BPartner().getName(), table);
-		pdf.addEventHandler(PdfDocumentEvent.START_PAGE, headerHandler);
-		pdf.setTagged();
-
 		HtmlConverter.convertToPdf(new ByteArrayInputStream(html), pdf);
 		byte[] pdfBytes = baos.toByteArray();
 		baos.close();
