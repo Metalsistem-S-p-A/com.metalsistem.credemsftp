@@ -164,7 +164,7 @@ public class ToCredemProcess extends SvrProcess {
             csvPrinter.close();
             String csvName = credemId + csvIdentifier + dataOra + ".csv";
 
-            if (count > 0) {
+            if (count > 0 && path != null) {
                 sftp.put(new SftpFile(csvName, sw.toString().getBytes()), path + csvName);
             }
 
@@ -181,7 +181,8 @@ public class ToCredemProcess extends SvrProcess {
                 ZipOutputStream zip = new ZipOutputStream(zipOut);
                 for (ME_Invoice einv : soEinvoices) {
                     byte[] xml = einv.getBinaryData();
-                    ZipEntry e = new ZipEntry(einv.getName() + ".xml");
+                    String name = einv.getDocumentNo().replaceAll("/", "-");
+                    ZipEntry e = new ZipEntry(name + ".xml");
                     zip.putNextEntry(e);
                     zip.write(xml);
                     zip.closeEntry();
@@ -191,7 +192,8 @@ public class ToCredemProcess extends SvrProcess {
                 }
                 zip.close();
                 String zipName = credemId + zipIdentifier + dataOra + ".zip";
-                sftp.put(new SftpFile(zipName, zipOut.toByteArray()), path + zipName);
+                if (path != null)
+                    sftp.put(new SftpFile(zipName, zipOut.toByteArray()), path + zipName);
                 zipOut.close();
             }
 

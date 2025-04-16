@@ -36,8 +36,10 @@ import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.util.encoders.Hex;
 import org.compiere.model.MAttachment;
 import org.compiere.model.MAttachmentEntry;
+import org.compiere.model.MBPBankAccount;
 import org.compiere.model.MBPartner;
 import org.compiere.model.MBPartnerLocation;
+import org.compiere.model.MBank;
 import org.compiere.model.MCountry;
 import org.compiere.model.MCurrency;
 import org.compiere.model.MDocType;
@@ -46,6 +48,7 @@ import org.compiere.model.MInvoiceLine;
 import org.compiere.model.MInvoicePaySchedule;
 import org.compiere.model.MLocation;
 import org.compiere.model.MPaymentTerm;
+import org.compiere.model.MProcess;
 import org.compiere.model.MProduct;
 import org.compiere.model.MRefList;
 import org.compiere.model.MRegion;
@@ -68,6 +71,7 @@ import com.metalsistem.credemsftp.utils.Utils;
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.AllegatiType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.CondizioniPagamentoType;
+import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiAnagraficiCedenteType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiGeneraliDocumentoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiPagamentoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DettaglioLineeType;
@@ -144,6 +148,9 @@ public class FromCredemProcess extends SvrProcess {
                 credemId = param.getParameterAsString();
             } else if ("Path".equals(name)) {
                 path = param.getParameterAsString();
+                if (!path.endsWith("/")) {
+                    path += "/";
+                }
             }
         }
     }
@@ -173,20 +180,17 @@ public class FromCredemProcess extends SvrProcess {
                 String[] parts = entry.getName().split("\\.");
                 if (credemId.equals(parts[1])) {
                     existingInvoices++;
-                    log.warning("Elaboro " + entry.getName());
                     InvoiceReceived inv = null;
                     byte[] xml = getXml(entry, sftp);
-                    inv = getInvoiceFromXml(xml, false); // fornitore
-
+                    inv = getInvoiceFromXml(xml); // fornitore
                     if (inv != null) {
                         saveInvoice(inv);
                         archiveEInvoice(xml, inv);
-//                        sftp.rm(entry.getPath());
+                         sftp.rm(entry.getPath());
                     }
                 } else if (parts[0].length() >= 16
                         && credemId.contains(parts[0].substring(10, 15))) {
                     // ELABORO ESITO
-                    log.info("Trovato esito " + entry.getName());
                     byte[] xml = getXml(entry, sftp);
                     List<M_EsitoCredem> esiti = getDatiEsito(xml);
                     for (M_EsitoCredem esito : esiti) {
@@ -202,7 +206,7 @@ public class FromCredemProcess extends SvrProcess {
                             esito.setLIT_EInvoice_ID(einv.get_ID());
                         esito.saveEx();
                     }
-                    // sftp.rm(entry.getPath());
+                     sftp.rm(entry.getPath());
                 }
             }
             sftp.close();
@@ -270,7 +274,16 @@ public class FromCredemProcess extends SvrProcess {
             byte[] pdfBytes = {};
             try {
                 PdfUtils utils = new PdfUtils();
-                pdfBytes = utils.create(xml, inv, true);
+                MAttachment procAttachments =
+                        new MAttachment(getCtx(), MProcess.Table_ID, getProcessInfo().getAD_Process_ID(),
+                                getProcessInfo().getAD_Process_UU(), null);
+                List<MAttachmentEntry> pdfAttachment = List.of(procAttachments.getEntries());
+                MAttachmentEntry pdfStyle = pdfAttachment.stream()
+                        .filter(att -> att.getFile().getName().endsWith(".xsl"))
+                        .findFirst()
+                        .orElse(null);
+
+                pdfBytes = utils.create(xml, inv, true, pdfStyle);
                 if (pdfBytes != null) {
                     MAttachmentEntry entry = new MAttachmentEntry("xml-" + noDocFile + ".xml", xml);
                     entry.setName("Fattura-" + noDocFile + ".pdf");
@@ -286,7 +299,6 @@ public class FromCredemProcess extends SvrProcess {
     }
 
     private void saveInvoice(InvoiceReceived inv) throws Exception {
-        // TODO: Controlla colonne db
         MInvoice res = new Query(getCtx(), MInvoice.Table_Name,
                 "DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?", null).setClient_ID()
                 .setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced())
@@ -322,31 +334,29 @@ public class FromCredemProcess extends SvrProcess {
         return;
     }
 
-    private InvoiceReceived getInvoice(FatturaElettronicaType fattura, boolean fornitore)
-            throws Exception {
+    private InvoiceReceived getInvoice(FatturaElettronicaType fattura) throws Exception {
+        // TODO: Gestire caso di molteplici body(?)
+        FatturaElettronicaBodyType body = fattura.getFatturaElettronicaBody().get(0);
+        DatiGeneraliDocumentoType datiGeneraliDocumento =
+                body.getDatiGenerali().getDatiGeneraliDocumento();
         InvoiceReceived invoice = new InvoiceReceived(new MInvoice(getCtx(), 0, null));
         invoice.setAD_Org_ID(Env.getAD_Org_ID(getCtx()));
 
-        FatturaElettronicaBodyType firstBody = fattura.getFatturaElettronicaBody().get(0);
-        DatiGeneraliDocumentoType datiGeneraliDocumento =
-                firstBody.getDatiGenerali().getDatiGeneraliDocumento();
-
+        // ALLEGATI
         List<MAttachmentEntry> allegati = new ArrayList<MAttachmentEntry>();
-        for (AllegatiType allegato : firstBody.getAllegati()) {
+        for (AllegatiType allegato : body.getAllegati()) {
             String nome = allegato.getNomeAttachment();
             byte[] content = allegato.getAttachment();
             allegati.add(new MAttachmentEntry(nome, content));
         }
-
         invoice.setAttachmentEntries(allegati);
 
-        FatturaElettronicaBodyType body = firstBody;
         XMLGregorianCalendar gregorianDate = datiGeneraliDocumento.getData();
-
         invoice.setDateInvoiced(
                 new Timestamp(gregorianDate.toGregorianCalendar().getTimeInMillis()));
         invoice.setDocumentNo(datiGeneraliDocumento.getNumero());
         invoice.setC_Currency_ID(MCurrency.get(datiGeneraliDocumento.getDivisa()).get_ID());
+
         // TIPO DOCUMENTO
         MDocType docType = new MDocType(getCtx(), 0, null);
         if (!List
@@ -368,6 +378,7 @@ public class FromCredemProcess extends SvrProcess {
             invoice.setC_DocTypeTarget_ID(docType.get_ID());
 
         } else {
+            // Non serve importare questo tipo di documento
             return null;
         }
 
@@ -378,14 +389,12 @@ public class FromCredemProcess extends SvrProcess {
                 .getIdFiscaleIVA()
                 .getIdCodice();
         MBPartner mbp =
-                new Query(getCtx(), MBPartner.Table_Name, "LIT_TaxId=?", null).setClient_ID()
-                        .setParameters(codice)
-                        .first();
-        invoice.setIsSOTrx(fornitore);
+                new Query(getCtx(), MBPartner.Table_Name, "TaxID = ? or LIT_NationalIdNumber = ?",
+                        null).setClient_ID().setParameters(codice, codice).first();
+        invoice.setIsSOTrx(false);
         if (mbp == null || mbp.get_ID() <= 0) {
             mbp = createAndSaveBusinessPartner(fattura, codice);
             publishNewBpMessage(mbp);
-            log.warning("BusinessPartner creato");
             MBPartnerLocation mbpLocation = getBPLocationFromEinvoice(fattura);
             mbpLocation.setC_BPartner_ID(mbp.get_ID());
             mbpLocation.saveEx();
@@ -395,8 +404,6 @@ public class FromCredemProcess extends SvrProcess {
 
         invoice.setBPartner(mbp);
         // LOCATION
-        // String invoiceLocation = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getSede().getIndirizzo();
-        // MLocation bpLocation = MLocation.getBPLocation(getCtx(), mbp.getPrimaryC_BPartner_Location_ID(), null);
         MBPartnerLocation mbpLocation = mbp.getPrimaryC_BPartner_Location();
         MCountry to = new MCountry(getCtx(), 214, null);
         if (mbpLocation.get_ID() <= 0) {
@@ -455,8 +462,9 @@ public class FromCredemProcess extends SvrProcess {
             }
             if (linea.getQuantita() != null) {
                 il.setQtyEntered(linea.getQuantita());
+                il.setQtyInvoiced(linea.getQuantita());
             } else if (linea.getQuantita() == null && linea.getPrezzoTotale() != null
-                    && linea.getPrezzoUnitario() != null) { // Esempio: Extra costi finitura
+                    && linea.getPrezzoUnitario() != null) {
                 il.setQtyEntered(BigDecimal.ONE);
             }
             if (linea.getUnitaMisura() != null) {
@@ -486,20 +494,49 @@ public class FromCredemProcess extends SvrProcess {
         List<DatiPagamentoType> datiPagamento = body.getDatiPagamento();
         if (datiPagamento.size() > 0) {
             DatiPagamentoType datiPagamentoType = datiPagamento.get(0);
+            try {
+                DettaglioPagamentoType dett = datiPagamentoType.getDettaglioPagamento().get(0);
+                if (dett.getIBAN() != null) {
+                    MBPBankAccount mbpa = new MBPBankAccount(getCtx(), 0, null);
+                    mbpa.setC_BPartner_ID(mbp.get_ID());
+                    mbpa.setIsActive(true);
+                    mbpa.setIsACH(true);
+                    mbpa.setIBAN(dett.getIBAN());
+                    if (dett.getABI() != null && dett.getCAB() != null) {
+                        MBank bank = new Query(getCtx(), MBank.Table_Name,
+                                "RoutingNo = ? AND isActive = 'Y'", null).setClient_ID()
+                                .setParameters(dett.getABI() + dett.getCAB())
+                                .first();
+                        if (bank != null)
+                            mbpa.setC_Bank_ID(bank.get_ID());
+                    }
+                    mbpa.saveEx();
+                }
+            } catch (Exception e) {
+                log.warning("Impossibile creare Business Partner Bank Account");
+                log.warning(e.getMessage());
+            }
+
             CondizioniPagamentoType cpt = datiPagamentoType.getCondizioniPagamento();
             ModalitaPagamentoType dpt =
                     datiPagamentoType.getDettaglioPagamento().get(0).getModalitaPagamento();
 
             int pTerm = parsePaymentTerm(cpt.value());
             invoice.setC_PaymentTerm_ID(pTerm != -1 ? pTerm : mbp.getPO_PaymentTerm_ID());
+
             invoice.setPaymentRule(parsePaymentRule(dpt.value()));
+
+            if (mbp.getPO_PaymentTerm() == null)
+                mbp.setPO_PaymentTerm_ID(pTerm != -1 ? pTerm : mbp.getPO_PaymentTerm_ID());
+            if (mbp.getPaymentRulePO() == null)
+                mbp.setPaymentRulePO(parsePaymentRule(dpt.value()));
+            mbp.saveEx();
         } else {
-            if (mbp.getPO_PaymentTerm() != null) {
+            if (mbp.getPO_PaymentTerm() != null)
                 invoice.setC_PaymentTerm_ID(mbp.getPO_PaymentTerm_ID());
-            }
-            if (mbp.getPaymentRule() != null) {
-                invoice.setPaymentRule(mbp.getPaymentRule());
-            }
+            if (mbp.getPaymentRulePO() != null)
+                invoice.setPaymentRule(mbp.getPaymentRulePO());
+            mbp.saveEx();
         }
 
         // SCADENZE
@@ -510,7 +547,6 @@ public class FromCredemProcess extends SvrProcess {
                 ips.setC_Invoice_ID(invoice.get_ID());
                 ips.setParent(invoice);
 
-                ips.setParent(invoice);
                 ips.setDueAmt(dettaglio.getImportoPagamento());
                 ips.setDiscountAmt(dettaglio.getImportoPagamento());
 
@@ -528,6 +564,7 @@ public class FromCredemProcess extends SvrProcess {
         }
 
         invoice.setScheduledPayments(scadenze);
+        invoice.setSalesRep_ID(0);
         invoice.setAD_User_ID(-1);
 
         return invoice;
@@ -598,17 +635,15 @@ public class FromCredemProcess extends SvrProcess {
         return mbpLocation;
     }
 
-    private MBPartner createAndSaveBusinessPartner(FatturaElettronicaType fattura, String codice) {
-        MBPartner mbp;
-        mbp = new MBPartner(getCtx(), 0, null);
-        mbp.set_ValueOfColumn("LIT_TaxId", codice);
-        mbp.setTaxID(codice);
-        mbp.set_ValueOfColumn("LIT_NationalIDNumber", codice);
-        mbp.setName(fattura.getFatturaElettronicaHeader()
-                .getCedentePrestatore()
-                .getDatiAnagrafici()
-                .getAnagrafica()
-                .getDenominazione());
+    private MBPartner createAndSaveBusinessPartner(FatturaElettronicaType fattura, String piva) {
+        MBPartner mbp = new MBPartner(getCtx(), 0, null);
+        DatiAnagraficiCedenteType anagrafica =
+                fattura.getFatturaElettronicaHeader().getCedentePrestatore().getDatiAnagrafici();
+        // mbp.set_ValueOfColumn("LIT_TaxId", codice);
+        mbp.setTaxID(piva);
+        mbp.set_ValueOfColumn("LIT_NationalIdNumber",
+                anagrafica.getCodiceFiscale() != null ? anagrafica.getCodiceFiscale() : piva);
+        mbp.setName(anagrafica.getAnagrafica().getDenominazione());
         mbp.setIsVendor(true);
         mbp.setIsCustomer(false);
         mbp.saveEx();
@@ -636,16 +671,14 @@ public class FromCredemProcess extends SvrProcess {
         BroadcastMsgUtil.publishBroadcastMessage(msg.get_ID(), null);
     }
 
-    public InvoiceReceived getInvoiceFromXml(byte[] xml, boolean fornitore) throws Exception {
-        // FatturaElettronicaDecoder decoder = new FatturaElettronicaDecoder();
-        // String fatturaXML = new String(xml);
+    private InvoiceReceived getInvoiceFromXml(byte[] xml) throws Exception {
         ManageXML_new manageXml = new ManageXML_new();
         FatturaElettronicaType fattura =
                 manageXml.importFatturaElettronica(new ByteArrayInputStream(xml));
-        return getInvoice(fattura, fornitore);
+        return getInvoice(fattura);
     }
 
-    public byte[] getXml(RemoteResourceInfo entry, SFTPClient sftp) throws Exception {
+    private byte[] getXml(RemoteResourceInfo entry, SFTPClient sftp) throws Exception {
         RemoteFile f = sftp.getSFTPEngine().open(entry.getPath());
         InputStream is = f.new RemoteFileInputStream(0);
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -675,7 +708,7 @@ public class FromCredemProcess extends SvrProcess {
         return xml;
     }
 
-    public String parsePaymentRule(String id) {
+    private String parsePaymentRule(String id) {
         String modalitàPagamento = "";
         switch (id) {
             case "MP01":
@@ -709,7 +742,7 @@ public class FromCredemProcess extends SvrProcess {
         return ref.getValue();
     }
 
-    public int parsePaymentTerm(String id) {
+    private int parsePaymentTerm(String id) {
         String terminePagamento = "";
         switch (id) {
             case "TP01": // Pagamento a Rate
