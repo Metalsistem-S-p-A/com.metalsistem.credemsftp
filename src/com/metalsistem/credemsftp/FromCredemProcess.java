@@ -181,7 +181,7 @@ public class FromCredemProcess extends SvrProcess {
                     if (inv != null) {
                         saveInvoice(inv);
                         archiveEInvoice(xml, inv);
-                        sftp.rm(entry.getPath());
+//                        sftp.rm(entry.getPath());
                     }
                 } else if (parts[0].length() >= 16
                         && credemId.contains(parts[0].substring(10, 15))) {
@@ -574,7 +574,7 @@ public class FromCredemProcess extends SvrProcess {
         if (location == null) {
             location = new MLocation(getCtx(), 0, null);
             String indirizzo = sede.getIndirizzo();
-            if (sede.getNumeroCivico() != null) {
+            if (sede.getNumeroCivico() != null && !indirizzo.contains(sede.getNumeroCivico())) {
                 indirizzo += ", " + sede.getNumeroCivico();
             }
             location.setAddress1(indirizzo);
