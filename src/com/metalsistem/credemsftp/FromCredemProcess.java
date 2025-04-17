@@ -497,20 +497,27 @@ public class FromCredemProcess extends SvrProcess {
             try {
                 DettaglioPagamentoType dett = datiPagamentoType.getDettaglioPagamento().get(0);
                 if (dett.getIBAN() != null) {
-                    MBPBankAccount mbpa = new MBPBankAccount(getCtx(), 0, null);
-                    mbpa.setC_BPartner_ID(mbp.get_ID());
-                    mbpa.setIsActive(true);
-                    mbpa.setIsACH(true);
-                    mbpa.setIBAN(dett.getIBAN());
-                    if (dett.getABI() != null && dett.getCAB() != null) {
-                        MBank bank = new Query(getCtx(), MBank.Table_Name,
-                                "RoutingNo = ? AND isActive = 'Y'", null).setClient_ID()
-                                .setParameters(dett.getABI() + dett.getCAB())
-                                .first();
-                        if (bank != null)
-                            mbpa.setC_Bank_ID(bank.get_ID());
+                    List<MBPBankAccount> mbpas = List.of(mbp.getBankAccounts(true));
+                    MBPBankAccount mbpa = mbpas.stream()
+                            .filter(bpa -> dett.getIBAN().equals(bpa.getIBAN()))
+                            .findFirst()
+                            .orElse(null);
+                    if (mbpa == null) {
+                        mbpa = new MBPBankAccount(getCtx(), 0, null);
+                        mbpa.setC_BPartner_ID(mbp.get_ID());
+                        mbpa.setIsActive(true);
+                        mbpa.setIsACH(true);
+                        mbpa.setIBAN(dett.getIBAN());
+                        if (dett.getABI() != null && dett.getCAB() != null) {
+                            MBank bank = new Query(getCtx(), MBank.Table_Name,
+                                    "RoutingNo = ? AND isActive = 'Y'", null).setClient_ID()
+                                    .setParameters(dett.getABI() + dett.getCAB())
+                                    .first();
+                            if (bank != null)
+                                mbpa.setC_Bank_ID(bank.get_ID());
+                        }
+                        mbpa.saveEx();
                     }
-                    mbpa.saveEx();
                 }
             } catch (Exception e) {
                 log.warning("Impossibile creare Business Partner Bank Account");
