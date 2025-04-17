@@ -186,7 +186,7 @@ public class FromCredemProcess extends SvrProcess {
                     if (inv != null) {
                         saveInvoice(inv);
                         archiveEInvoice(xml, inv);
-                         sftp.rm(entry.getPath());
+                        sftp.rm(entry.getPath());
                     }
                 } else if (parts[0].length() >= 16
                         && credemId.contains(parts[0].substring(10, 15))) {
@@ -206,7 +206,7 @@ public class FromCredemProcess extends SvrProcess {
                             esito.setLIT_EInvoice_ID(einv.get_ID());
                         esito.saveEx();
                     }
-                     sftp.rm(entry.getPath());
+                    sftp.rm(entry.getPath());
                 }
             }
             sftp.close();
@@ -274,9 +274,9 @@ public class FromCredemProcess extends SvrProcess {
             byte[] pdfBytes = {};
             try {
                 PdfUtils utils = new PdfUtils();
-                MAttachment procAttachments =
-                        new MAttachment(getCtx(), MProcess.Table_ID, getProcessInfo().getAD_Process_ID(),
-                                getProcessInfo().getAD_Process_UU(), null);
+                MAttachment procAttachments = new MAttachment(getCtx(), MProcess.Table_ID,
+                        getProcessInfo().getAD_Process_ID(), getProcessInfo().getAD_Process_UU(),
+                        null);
                 List<MAttachmentEntry> pdfAttachment = List.of(procAttachments.getEntries());
                 MAttachmentEntry pdfStyle = pdfAttachment.stream()
                         .filter(att -> att.getFile().getName().endsWith(".xsl"))
@@ -421,11 +421,11 @@ public class FromCredemProcess extends SvrProcess {
         if (to != null && from != null) {
             registroIva = MLITVATDocTypeSequence.getVATDocTypeSequenceWithCountry(invoice,
                     from.get_ID(), to.get_ID());
-            invoice.set_ValueOfColumn("LIT_VATJournal_ID", registroIva.getLIT_VATJournal_ID());
+            // Registro Iva impostato automaticamente in fase di completamento
         } else {
             registroIva = null;
         }
-
+        //
         invoice.setGrandTotal(datiGeneraliDocumento.getImportoTotaleDocumento());
         List<MInvoiceLine> linee = new ArrayList<MInvoiceLine>();
         List<MUOM> uoms = new Query(getCtx(), MUOM.Table_Name, "", null).setClient_ID().list();
