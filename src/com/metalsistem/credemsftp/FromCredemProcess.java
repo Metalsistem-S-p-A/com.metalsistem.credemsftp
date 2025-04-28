@@ -184,9 +184,9 @@ public class FromCredemProcess extends SvrProcess {
                     byte[] xml = getXml(entry, sftp);
                     inv = getInvoiceFromXml(xml);
                     if (inv != null) {
-                        saveInvoice(inv);
+                        inv = saveInvoice(inv);
                         archiveEInvoice(xml, inv);
-                        // sftp.rm(entry.getPath());
+                        sftp.rm(entry.getPath());
                     }
                 } else if (parts[0].length() >= 16
                         && credemId.contains(parts[0].substring(10, 15))) {
@@ -262,11 +262,12 @@ public class FromCredemProcess extends SvrProcess {
             einv.setBinaryData(xml);
             einv.setName("FE: " + inv.getDocumentNo());
             einv.setC_DocType_ID(inv.getDocTypeID());
-            einv.setC_Invoice_ID(inv.get_ID());
+            einv.setC_Invoice_ID(inv.getC_Invoice_ID());
             einv.setDocumentNo(inv.getDocumentNo());
             einv.setFileName("xml-" + noDocFile + ".xml");
             einv.setDateInvoiced(inv.getDateInvoiced());
             einv.set_ValueOfColumn("LIT_MsSyncCredem", false);
+
             einv.saveEx();
 
             MAttachment attachment = new MAttachment(getCtx(), 0, null);
@@ -299,7 +300,7 @@ public class FromCredemProcess extends SvrProcess {
         }
     }
 
-    private void saveInvoice(InvoiceReceived inv) throws Exception {
+    private InvoiceReceived saveInvoice(InvoiceReceived inv) throws Exception {
         MInvoice res = new Query(getCtx(), MInvoice.Table_Name,
                 "DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?", null).setClient_ID()
                 .setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced())
@@ -330,9 +331,10 @@ public class FromCredemProcess extends SvrProcess {
             }
             log.info("Scadenze Fattura importate");
         } else {
+            inv = new InvoiceReceived(res);
             log.warning("Fattura %s già importata".formatted(res.getDocumentNo()));
         }
-        return;
+        return inv;
     }
 
     private InvoiceReceived getInvoice(FatturaElettronicaType fattura) throws Exception {
