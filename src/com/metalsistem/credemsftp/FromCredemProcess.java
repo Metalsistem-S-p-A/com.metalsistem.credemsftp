@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -59,7 +60,10 @@ import org.compiere.model.Query;
 import org.compiere.process.ProcessInfoParameter;
 import org.compiere.process.SvrProcess;
 import org.compiere.util.CLogger;
+import org.compiere.util.DB;
 import org.compiere.util.Env;
+import org.globalqss.model.I_LCO_WithholdingType;
+import org.globalqss.model.MLCOInvoiceWithholding;
 import org.idempiere.broadcast.BroadcastMsgUtil;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
@@ -75,6 +79,7 @@ import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiAnagraficiCedenteType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiCassaPrevidenzialeType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiGeneraliDocumentoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiPagamentoType;
+import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiRitenutaType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DettaglioLineeType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DettaglioPagamentoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.FatturaElettronicaBodyType;
@@ -130,10 +135,16 @@ public class FromCredemProcess extends SvrProcess {
     List<MTax> taxes = new ArrayList<MTax>();
     private static final CLogger log = CLogger.getCLogger(FromCredemProcess.class);
 
+    public void prepareTaxes() {
+
+        taxes = new Query(Env.getCtx(), MTax.Table_Name, "to_country_id = 214 ", null)
+                .setClient_ID()
+                .list();
+    }
+
     @Override
     protected void prepare() {
-        taxes = new Query(getCtx(), MTax.Table_Name, "to_country_id = 214 ", null).setClient_ID()
-                .list();
+        prepareTaxes();
         ProcessInfoParameter[] params = getParameter();
         for (ProcessInfoParameter param : params) {
             String name = param.getParameterName();
@@ -254,13 +265,13 @@ public class FromCredemProcess extends SvrProcess {
         return res;
     }
 
-    private void archiveEInvoice(byte[] xml, MInvoice inv) {
+    public void archiveEInvoice(byte[] xml, MInvoice inv) {
         ME_Invoice einv =
-                new Query(getCtx(), ME_Invoice.Table_Name, "Name = ?", null).setClient_ID()
+                new Query(Env.getCtx(), ME_Invoice.Table_Name, "Name = ?", null).setClient_ID()
                         .setParameters("FE: " + inv.getDocumentNo())
                         .first();
         if (einv == null) {
-            einv = new ME_Invoice(getCtx(), 0, null);
+            einv = new ME_Invoice(Env.getCtx(), 0, null);
             String noDocFile = inv.getDocumentNo().replaceAll("/", "-");
             einv.setBinaryData(xml);
             einv.setName("FE: " + inv.getDocumentNo());
@@ -273,15 +284,14 @@ public class FromCredemProcess extends SvrProcess {
 
             einv.saveEx();
 
-            MAttachment attachment = new MAttachment(getCtx(), 0, null);
+            MAttachment attachment = new MAttachment(Env.getCtx(), 0, null);
             attachment.setRecord_ID(einv.get_ID());
             attachment.setAD_Table_ID(ME_Invoice.Table_ID);
             byte[] pdfBytes = {};
             try {
                 PdfUtils utils = new PdfUtils();
-                MAttachment procAttachments = new MAttachment(getCtx(), MProcess.Table_ID,
-                        getProcessInfo().getAD_Process_ID(), getProcessInfo().getAD_Process_UU(),
-                        null);
+                MAttachment procAttachments = new MAttachment(Env.getCtx(), MProcess.Table_ID,
+                        einv.get_ID(), einv.get_UUID(), null);
                 List<MAttachmentEntry> pdfAttachment = List.of(procAttachments.getEntries());
                 MAttachmentEntry pdfStyle = pdfAttachment.stream()
                         .filter(att -> att.getFile().getName().endsWith(".xsl"))
@@ -303,8 +313,8 @@ public class FromCredemProcess extends SvrProcess {
         }
     }
 
-    private InvoiceReceived saveInvoice(InvoiceReceived inv) throws Exception {
-        MInvoice res = new Query(getCtx(), MInvoice.Table_Name,
+    public InvoiceReceived saveInvoice(InvoiceReceived inv) throws Exception {
+        MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
                 "DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?", null).setClient_ID()
                 .setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced())
                 .first();
@@ -319,7 +329,7 @@ public class FromCredemProcess extends SvrProcess {
             }
             log.info("Linee Fattura importate");
 
-            MAttachment attachment = new MAttachment(getCtx(), 0, null);
+            MAttachment attachment = new MAttachment(Env.getCtx(), 0, null);
             attachment.setRecord_ID(inv.get_ID());
             attachment.setAD_Table_ID(MInvoice.Table_ID);
             for (MAttachmentEntry a : inv.getAttachmentEntries()) {
@@ -333,6 +343,16 @@ public class FromCredemProcess extends SvrProcess {
                 s.saveEx();
             }
             log.info("Scadenze Fattura importate");
+
+            for (MLCOInvoiceWithholding wh : inv.getWithHoldings()) {
+                wh.setC_Invoice_ID(inv.get_ID());
+                System.out.println(wh.getLCO_WithholdingType_ID());
+                System.out.println(wh.getC_Tax_ID());
+                System.out.println(wh.getTaxAmt());
+                System.out.println(wh.getTaxBaseAmt());
+
+                wh.saveEx();
+            }
         } else {
             inv = new InvoiceReceived(res);
             log.warning("Fattura %s già importata".formatted(res.getDocumentNo()));
@@ -346,7 +366,7 @@ public class FromCredemProcess extends SvrProcess {
         FatturaElettronicaBodyType body = fattura.getFatturaElettronicaBody().get(0);
         DatiGeneraliDocumentoType datiGeneraliDocumento =
                 body.getDatiGenerali().getDatiGeneraliDocumento();
-        invoice.setAD_Org_ID(Env.getAD_Org_ID(getCtx()));
+        invoice.setAD_Org_ID(Env.getAD_Org_ID(Env.getCtx()));
         invoice.setIsSOTrx(false);
 
         XMLGregorianCalendar gregorianDate = datiGeneraliDocumento.getData();
@@ -374,12 +394,12 @@ public class FromCredemProcess extends SvrProcess {
             invoice.set_ValueOfColumn("LIT_FEPA_DOCTYPE",
                     datiGeneraliDocumento.getTipoDocumento().value());
 
-            docType = new Query(getCtx(), MDocType.Table_Name,
+            docType = new Query(Env.getCtx(), MDocType.Table_Name,
                     "lit_fepa_doctype = ? and issotrx='N' ", null).setClient_ID()
                     .setParameters(datiGeneraliDocumento.getTipoDocumento().value())
                     .first();
             if (docType == null) {
-                docType = new Query(getCtx(), MDocType.Table_Name,
+                docType = new Query(Env.getCtx(), MDocType.Table_Name,
                         "lit_fepa_doctype = 'TD01' and issotrx='N' ", null).setClient_ID().first();
             }
             invoice.setC_DocType_ID(docType.get_ID());
@@ -396,7 +416,7 @@ public class FromCredemProcess extends SvrProcess {
                 .getIdFiscaleIVA()
                 .getIdCodice();
         MBPartner mbp =
-                new Query(getCtx(), MBPartner.Table_Name, "? in (taxID, LIT_NationalIDNumber)",
+                new Query(Env.getCtx(), MBPartner.Table_Name, "? in (taxID, LIT_NationalIDNumber)",
                         null).setClient_ID().setParameters(codice).first();
 
         if (mbp == null) {
@@ -408,11 +428,15 @@ public class FromCredemProcess extends SvrProcess {
             mbp.setPrimaryC_BPartner_Location_ID(mbpLocation.get_ID());
             mbp.saveEx();
         }
+
+        mbp.setIsVendor(true);
+
+
         invoice.setBPartner(mbp);
 
         // LOCATION
         MBPartnerLocation mbpLocation = mbp.getPrimaryC_BPartner_Location();
-        MCountry to = new MCountry(getCtx(), 214, null);
+        MCountry to = new MCountry(Env.getCtx(), 214, null);
         if (mbpLocation.get_ID() <= 0) {
             mbpLocation = getBPLocationFromEinvoice(fattura);
             mbpLocation.setC_BPartner_ID(mbp.get_ID());
@@ -435,32 +459,40 @@ public class FromCredemProcess extends SvrProcess {
 
         invoice.setGrandTotal(datiGeneraliDocumento.getImportoTotaleDocumento());
         List<MInvoiceLine> linee = new ArrayList<MInvoiceLine>();
-        List<MUOM> uoms = new Query(getCtx(), MUOM.Table_Name, "", null).setClient_ID().list();
+        List<MUOM> uoms = new Query(Env.getCtx(), MUOM.Table_Name, "", null).setClient_ID().list();
 
         // LETTERA D'INTENTO
         if (body.getDatiBeniServizi().getDatiRiepilogo().get(0).getNatura() != null && "N3.5"
                 .equals(body.getDatiBeniServizi().getDatiRiepilogo().get(0).getNatura().value())) {
 
-            // TODO: add isSOTrx
-            MBPLetterIntent letter = new Query(getCtx(), MBPLetterIntent.Table_Name,
-                    " bp_letterintentdatevalidfrom < Current_date AND bp_letterintentdatevalidto > current_date and c_bpartner_id = ?",
+            MBPLetterIntent letter = new Query(Env.getCtx(), MBPLetterIntent.Table_Name,
+                    " isSOTrx = 'N' "
+                    + "AND bp_letterintentdatevalidfrom < Current_date "
+                    + "AND bp_letterintentdatevalidto > current_date "
+                    + "AND c_bpartner_id = ?",
                     null).setClient_ID().setParameters(mbp.get_ID()).first();
             if (letter != null)
                 invoice.set_ValueOfColumn("c_bp_partner_letterintent_id", letter.get_ID());
         }
 
         // LINEE
+        BigDecimal imponibile = BigDecimal.ZERO;
         for (DettaglioLineeType linea : body.getDatiBeniServizi().getDettaglioLinee()) {
-            MInvoiceLine il = new MInvoiceLine(getCtx(), -1, null);
+            MInvoiceLine il = new MInvoiceLine(Env.getCtx(), -1, null);
+            MTax invTax = getTax(registroIva, linea);
             il.setInvoice(invoice);
             il.setLine(linea.getNumeroLinea() * 10); // iDempiere Standard
             il.setName(linea.getDescrizione());
             il.setPrice(linea.getPrezzoUnitario());
             il.setDescription(linea.getDescrizione());
+            il.setC_Tax_ID(invTax.get_ID());
 
+            if (invTax.getRate().compareTo(BigDecimal.ZERO) > 0) {
+                imponibile = imponibile.add(linea.getPrezzoUnitario());
+            }
             if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
-                MProduct prod =
-                        new MProduct(getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
+                MProduct prod = new MProduct(Env.getCtx(),
+                        mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
                 il.setProduct(prod);
             }
             if (!linea.getCodiceArticolo().isEmpty()) {
@@ -492,17 +524,15 @@ public class FromCredemProcess extends SvrProcess {
                     }
                 }
             }
-            MTax invTax = getTax(registroIva, linea);
-            il.setC_Tax_ID(invTax.get_ID());
             linee.add(il);
         }
 
         List<DatiCassaPrevidenzialeType> datiCassa =
                 body.getDatiGenerali().getDatiGeneraliDocumento().getDatiCassaPrevidenziale();
 
-        
+
         for (DatiCassaPrevidenzialeType dato : datiCassa) {
-            MInvoiceLine il = new MInvoiceLine(getCtx(), -1, null);
+            MInvoiceLine il = new MInvoiceLine(Env.getCtx(), -1, null);
             il.setInvoice(invoice);
             il.setName("Contributo previdenziale " + dato.getTipoCassa().value() + " "
                     + dato.getAlCassa());
@@ -511,7 +541,11 @@ public class FromCredemProcess extends SvrProcess {
             il.setPrice(dato.getImportoContributoCassa());
             il.setQtyEntered(BigDecimal.ONE);
             il.setQtyInvoiced(BigDecimal.ONE);
-
+            if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
+                MProduct prod = new MProduct(Env.getCtx(),
+                        mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
+                il.setProduct(prod);
+            }
             MTax invTax = taxes.stream().filter(tax -> {
                 if (dato.getNatura() != null && tax.get_ValueAsString("LIT_XMLInvoice_TaxType")
                         .startsWith(dato.getNatura().value())) {
@@ -531,19 +565,18 @@ public class FromCredemProcess extends SvrProcess {
             il.setC_Tax_ID(invTax.get_ID());
             linee.add(il);
         }
-
         invoice.setInvoiceLines(linee);
 
         // TERMINI E MODALITA' PAGAMENTO, SCADENZE
         List<MInvoicePaySchedule> scadenze = new ArrayList<MInvoicePaySchedule>();
         List<MBPBankAccount> mbpas = List.of(mbp.getBankAccounts(true));
+
         for (DatiPagamentoType pagamento : body.getDatiPagamento()) {
             for (DettaglioPagamentoType dettaglio : pagamento.getDettaglioPagamento()) {
                 createBPBankAccount(mbp, dettaglio, mbpas);
-                MInvoicePaySchedule ips = new MInvoicePaySchedule(getCtx(), 0, null);
+                MInvoicePaySchedule ips = new MInvoicePaySchedule(Env.getCtx(), 0, null);
                 ips.setC_Invoice_ID(invoice.get_ID());
                 ips.setParent(invoice);
-
                 ips.setDueAmt(dettaglio.getImportoPagamento());
                 ips.setDiscountAmt(dettaglio.getScontoPagamentoAnticipato() != null
                         ? dettaglio.getScontoPagamentoAnticipato()
@@ -562,32 +595,70 @@ public class FromCredemProcess extends SvrProcess {
                                 .getTimeInMillis())
                         : scadenza;
 
-
                 ips.setDueDate(scadenza);
                 ips.setDiscountDate(scadenzaSconto);
                 // In caso non ci siano le date, queste vengono generate
                 // in idempiere al momento del completamento della fattura
-                CondizioniPagamentoType cpt = pagamento.getCondizioniPagamento();
-                ModalitaPagamentoType dpt = dettaglio.getModalitaPagamento();
-                int pTerm = parsePaymentTermId(cpt.value());
+                // CondizioniPagamentoType cpt = pagamento.getCondizioniPagamento();
+                // int pTerm = parsePaymentTermId(cpt.value());
                 // ips.set_ValueOfColumn("LIT_PaymentTermType",
                 // pTerm != -1 ? pTerm : mbp.getPO_PaymentTerm_ID());
+
+                ModalitaPagamentoType dpt = dettaglio.getModalitaPagamento();
                 ips.set_ValueOfColumn("PaymentRule", parsePaymentRule(dpt.value()));
                 scadenze.add(ips);
-                if (mbp.getPO_PaymentTerm_ID() <= 0) {
-                    mbp.setPO_PaymentTerm_ID(pTerm);
-                    mbp.saveEx();
-                }
-                if (mbp.getPaymentRulePO() == null) {
-                    mbp.setPaymentRulePO(parsePaymentRule(dpt.value()));
-                    mbp.saveEx();
-                }
             }
+        }
+        if (scadenze.size() > 0) {
+            invoice.set_ValueOfColumn("LIT_isNoCheckPaymentTerm", "Y");
+        } else {
+            invoice.set_ValueOfColumn("LIT_isNoCheckPaymentTerm", "N");
+        }
+
+        List<DatiRitenutaType> ritenute =
+                body.getDatiGenerali().getDatiGeneraliDocumento().getDatiRitenuta();
+        List<MLCOInvoiceWithholding> acconti = new ArrayList<>();
+        for (DatiRitenutaType ritenuta : ritenute) {
+            MLCOInvoiceWithholding acconto = new MLCOInvoiceWithholding(Env.getCtx(), 0, null);
+            int typeId = DB.getSQLValue(null,
+                    "select * from lco_withholdingType where LIT_WithHoldingTypeEInv = ? and ad_client_id = ?",
+                    ritenuta.getTipoRitenuta().value(), Env.getAD_Client_ID(Env.getCtx()));
+            System.out.println(typeId);
+            List<MTax> impostaRitenute =
+                    new Query(Env.getCtx(), MTax.Table_Name, "Name like 'Ritenuta%'", null)
+                            .setClient_ID()
+                            .list();
+
+            MTax imposta = impostaRitenute.stream().filter(tax -> {
+                return tax.getName().contains(ritenuta.getAliquotaRitenuta().intValue() + "% A");
+            }).findFirst().get();
+            System.out.print(imposta);
+
+            acconto.setLCO_WithholdingType_ID(typeId);
+            acconto.setC_Tax_ID(imposta.get_ID());
+
+            acconto.setTaxBaseAmt(imponibile);
+            acconto.setTaxAmt(ritenuta.getImportoRitenuta());
+            acconti.add(acconto);
+        }
+        invoice.setWithHoldings(acconti);
+
+
+        if (mbp.getPO_PaymentTerm_ID() < 1) {
+            Integer paymentTermId = new Query(Env.getCtx(), MPaymentTerm.Table_Name,
+                    "isdefault = 'Y' and isactive='Y'", null).setClient_ID().firstId();
+            mbp.setPO_PaymentTerm_ID(paymentTermId);
+            mbp.saveEx();
+        }
+        if (mbp.getPaymentRulePO() == null || mbp.getPaymentRulePO().isBlank()) {
+            mbp.setPaymentRulePO(parsePaymentRule("MP05"));
+            mbp.saveEx();
         }
 
         invoice.setC_PaymentTerm_ID(mbp.getPO_PaymentTerm_ID());
         invoice.setPaymentRule(mbp.getPaymentRulePO());
 
+        System.out.println(invoice.getPaymentRule());
         invoice.setScheduledPayments(scadenze);
         invoice.setSalesRep_ID(0);
         invoice.setAD_User_ID(0);
@@ -604,13 +675,13 @@ public class FromCredemProcess extends SvrProcess {
                         .findFirst()
                         .orElse(null);
                 if (mbpa == null) {
-                    mbpa = new MBPBankAccount(getCtx(), 0, null);
+                    mbpa = new MBPBankAccount(Env.getCtx(), 0, null);
                     mbpa.setC_BPartner_ID(mbp.get_ID());
                     mbpa.setIsActive(true);
                     mbpa.setIsACH(true);
                     mbpa.setIBAN(dettaglio.getIBAN());
                     if (dettaglio.getABI() != null && dettaglio.getCAB() != null) {
-                        MBank bank = new Query(getCtx(), MBank.Table_Name,
+                        MBank bank = new Query(Env.getCtx(), MBank.Table_Name,
                                 "RoutingNo = ? AND isActive = 'Y'", null).setClient_ID()
                                 .setParameters(dettaglio.getABI() + dettaglio.getCAB())
                                 .first();
@@ -631,7 +702,7 @@ public class FromCredemProcess extends SvrProcess {
         // N3.5 = Lettera d'intento
         if (linea.getNatura() != null && "N3.5".equals(linea.getNatura().value())) {
             // Non imponibile Art 8 c.1
-            invTax = new Query(getCtx(), MTax.Table_Name, "value = 'F.02'", null).setClient_ID()
+            invTax = new Query(Env.getCtx(), MTax.Table_Name, "value = 'F.02'", null).setClient_ID()
                     .first();
         } else {
             invTax = taxes.stream().filter(tax -> {
@@ -650,9 +721,9 @@ public class FromCredemProcess extends SvrProcess {
     }
 
     private MBPartnerLocation getBPLocationFromEinvoice(FatturaElettronicaType fattura) {
-        MBPartnerLocation mbpLocation = new MBPartnerLocation(getCtx(), 0, null);
+        MBPartnerLocation mbpLocation = new MBPartnerLocation(Env.getCtx(), 0, null);
         IndirizzoType sede = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getSede();
-        MLocation location = new Query(getCtx(), MLocation.Table_Name,
+        MLocation location = new Query(Env.getCtx(), MLocation.Table_Name,
                 "c_location.address1 ILIKE '%' || ? || '%' AND "
                         + " c_location.postal = ? AND co.countrycode = ? AND "
                         + " c_location.city ILIKE '%' || ? || '%'",
@@ -661,9 +732,10 @@ public class FromCredemProcess extends SvrProcess {
                 .addJoinClause("JOIN c_region reg on C_Location.c_region_id = reg.c_region_id ")
                 .setParameters(sede.getIndirizzo(), sede.getCAP(), sede.getNazione(),
                         sede.getComune())
+                .setClient_ID()
                 .first();
         if (location == null) {
-            location = new MLocation(getCtx(), 0, null);
+            location = new MLocation(Env.getCtx(), 0, null);
             String indirizzo = sede.getIndirizzo();
             if (sede.getNumeroCivico() != null && !indirizzo.contains(sede.getNumeroCivico())) {
                 indirizzo += ", " + sede.getNumeroCivico();
@@ -671,14 +743,14 @@ public class FromCredemProcess extends SvrProcess {
             location.setAddress1(indirizzo);
             location.setPostal(sede.getCAP());
             location.setCity(sede.getComune());
-            MCountry country = new Query(getCtx(), MCountry.Table_Name, "countrycode = ?", null)
+            MCountry country = new Query(Env.getCtx(), MCountry.Table_Name, "countrycode = ?", null)
                     .setParameters(sede.getNazione())
                     .first();
 
             if (country != null) {
                 location.setCountry(country);
                 MRegion region =
-                        new Query(getCtx(), MRegion.Table_Name, "name = ? AND c_country_id = ?",
+                        new Query(Env.getCtx(), MRegion.Table_Name, "name = ? AND c_country_id = ?",
                                 null).setParameters(sede.getProvincia(), country.get_ID()).first();
                 location.setRegion(region);
             }
@@ -690,26 +762,37 @@ public class FromCredemProcess extends SvrProcess {
     }
 
     private MBPartner createAndSaveBusinessPartner(FatturaElettronicaType fattura, String piva) {
-        MBPartner mbp = new MBPartner(getCtx(), 0, null);
+        MBPartner mbp = new MBPartner(Env.getCtx(), 0, null);
         DatiAnagraficiCedenteType anagrafica =
                 fattura.getFatturaElettronicaHeader().getCedentePrestatore().getDatiAnagrafici();
         // mbp.set_ValueOfColumn("LIT_TaxId", codice);
         mbp.setTaxID(piva);
         mbp.set_ValueOfColumn("LIT_NationalIdNumber",
                 anagrafica.getCodiceFiscale() != null ? anagrafica.getCodiceFiscale() : piva);
-        mbp.setName(anagrafica.getAnagrafica().getDenominazione());
+
+        if (anagrafica.getAnagrafica().getDenominazione() != null)
+            mbp.setName(anagrafica.getAnagrafica().getDenominazione());
+        else {
+            mbp.setName(anagrafica.getAnagrafica().getNome() + " "
+                    + anagrafica.getAnagrafica().getCognome());
+        }
+
         mbp.setIsVendor(true);
         mbp.setIsCustomer(false);
+        Integer paymentTermId = new Query(Env.getCtx(), MPaymentTerm.Table_Name,
+                "isdefault = 'Y' and isactive='Y'", null).setClient_ID().firstId();
+        mbp.setPO_PaymentTerm_ID(paymentTermId);
+        mbp.setPaymentRulePO(parsePaymentRule("MP05"));
         mbp.saveEx();
         return mbp;
     }
 
     private void publishNewBpMessage(MBPartner mbp) {
-        MBroadcastMessage msg = new MBroadcastMessage(getCtx(), 0, null);
-        MRole role = new Query(getCtx(), MRole.Table_Name,
+        MBroadcastMessage msg = new MBroadcastMessage(Env.getCtx(), 0, null);
+        MRole role = new Query(Env.getCtx(), MRole.Table_Name,
                 "name = 'Amministrazione (responsabili)'", null).setClient_ID().first();
         if (role == null) {
-            role = new Query(getCtx(), MRole.Table_Name, "name like 'Amministratore%'", null)
+            role = new Query(Env.getCtx(), MRole.Table_Name, "name like 'Amministratore%'", null)
                     .setClient_ID()
                     .first();
         }
@@ -725,7 +808,7 @@ public class FromCredemProcess extends SvrProcess {
         BroadcastMsgUtil.publishBroadcastMessage(msg.get_ID(), null);
     }
 
-    private InvoiceReceived getInvoiceFromXml(byte[] xml) throws Exception {
+    public InvoiceReceived getInvoiceFromXml(byte[] xml) throws Exception {
         ManageXML_new manageXml = new ManageXML_new();
         FatturaElettronicaType fattura =
                 manageXml.importFatturaElettronica(new ByteArrayInputStream(xml));
@@ -787,13 +870,47 @@ public class FromCredemProcess extends SvrProcess {
                 modalitàPagamento = "Direct Debit";
                 break;
         }
-        MRefList ref = new Query(getCtx(), MRefList.Table_Name,
+        MRefList ref = new Query(Env.getCtx(), MRefList.Table_Name,
                 "AD_Ref_List.Name like ? AND re.name = '_Payment Rule' ", null)
                 .addJoinClause(
                         "JOIN ad_reference re on re.ad_reference_id = AD_Ref_List.ad_reference_id ")
                 .setParameters(modalitàPagamento)
                 .first();
         return ref.getValue();
+    }
+
+    private String getNamePaymentRule(String id) {
+        String modalitàPagamento = "";
+        switch (id) {
+            case "MP01":
+                modalitàPagamento = "Mixed POS Payment";
+                break;
+            case "MP02":
+                modalitàPagamento = "Check";
+                break;
+            case "MP05":
+                modalitàPagamento = "Direct Deposit";
+                break;
+            case "MP08":
+                modalitàPagamento = "Credit Card";
+                break;
+            case "MP09":
+                modalitàPagamento = "RID";
+                break;
+            case "MP12":
+                modalitàPagamento = "Direct Debit";
+                break;
+            default:
+                modalitàPagamento = "Direct Debit";
+                break;
+        }
+        MRefList ref = new Query(Env.getCtx(), MRefList.Table_Name,
+                "AD_Ref_List.Name like ? AND re.name = '_Payment Rule' ", null)
+                .addJoinClause(
+                        "JOIN ad_reference re on re.ad_reference_id = AD_Ref_List.ad_reference_id ")
+                .setParameters(modalitàPagamento)
+                .first();
+        return ref.get_Translation("Name", Env.getAD_Language(Env.getCtx()));
     }
 
     private MPaymentTerm parsePaymentTerm(String id) {
@@ -812,7 +929,7 @@ public class FromCredemProcess extends SvrProcess {
                 terminePagamento = null;
                 break;
         }
-        MPaymentTerm term = new Query(getCtx(), MPaymentTerm.Table_Name, "Name = ?", null)
+        MPaymentTerm term = new Query(Env.getCtx(), MPaymentTerm.Table_Name, "Name = ?", null)
                 .setParameters(terminePagamento)
                 .setClient_ID()
                 .first();
@@ -835,7 +952,7 @@ public class FromCredemProcess extends SvrProcess {
                 terminePagamento = null;
                 break;
         }
-        MPaymentTerm term = new Query(getCtx(), MPaymentTerm.Table_Name, "Name = ?", null)
+        MPaymentTerm term = new Query(Env.getCtx(), MPaymentTerm.Table_Name, "Name = ?", null)
                 .setParameters(terminePagamento)
                 .setClient_ID()
                 .first();

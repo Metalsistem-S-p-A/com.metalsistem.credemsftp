@@ -7,6 +7,7 @@ import org.compiere.model.MAttachmentEntry;
 import org.compiere.model.MInvoice;
 import org.compiere.model.MInvoiceLine;
 import org.compiere.model.MInvoicePaySchedule;
+import org.globalqss.model.MLCOInvoiceWithholding;
 
 public class InvoiceReceived extends MInvoice {
 
@@ -15,10 +16,10 @@ public class InvoiceReceived extends MInvoice {
 	private List<MAttachmentEntry> attachmentEntries = new ArrayList<MAttachmentEntry>();
 	private List<MInvoicePaySchedule> scheduledPayments = new ArrayList<MInvoicePaySchedule>();
 	private List<MInvoiceLine> invoiceLines = new ArrayList<MInvoiceLine>();
+	private List<MLCOInvoiceWithholding> withHoldings= new ArrayList<MLCOInvoiceWithholding>();
 
 	public InvoiceReceived(MInvoice copy) {
 		super(copy);
-		// TODO Auto-generated constructor stub
 	}
 
 	public List<MAttachmentEntry> getAttachmentEntries() {
@@ -44,5 +45,13 @@ public class InvoiceReceived extends MInvoice {
 	public void setInvoiceLines(List<MInvoiceLine> invoiceLines) {
 		this.invoiceLines = invoiceLines;
 	}
+
+    public List<MLCOInvoiceWithholding> getWithHoldings() {
+        return withHoldings;
+    }
+
+    public void setWithHoldings(List<MLCOInvoiceWithholding> withHoldings) {
+        this.withHoldings = withHoldings;
+    }
 
 }
