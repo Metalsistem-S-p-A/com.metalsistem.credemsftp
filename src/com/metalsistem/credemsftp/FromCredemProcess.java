@@ -72,6 +72,7 @@ import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.AllegatiType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.CondizioniPagamentoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiAnagraficiCedenteType;
+import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiCassaPrevidenzialeType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiGeneraliDocumentoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiPagamentoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DettaglioLineeType;
@@ -126,11 +127,13 @@ public class FromCredemProcess extends SvrProcess {
     private Integer importedInvoices = 0;
     private Integer existingInvoices = 0;
     private Integer port;
-
+    List<MTax> taxes = new ArrayList<MTax>();
     private static final CLogger log = CLogger.getCLogger(FromCredemProcess.class);
 
     @Override
     protected void prepare() {
+        taxes = new Query(getCtx(), MTax.Table_Name, "to_country_id = 214 ", null).setClient_ID()
+                .list();
         ProcessInfoParameter[] params = getParameter();
         for (ProcessInfoParameter param : params) {
             String name = param.getParameterName();
@@ -438,6 +441,7 @@ public class FromCredemProcess extends SvrProcess {
         if (body.getDatiBeniServizi().getDatiRiepilogo().get(0).getNatura() != null && "N3.5"
                 .equals(body.getDatiBeniServizi().getDatiRiepilogo().get(0).getNatura().value())) {
 
+            // TODO: add isSOTrx
             MBPLetterIntent letter = new Query(getCtx(), MBPLetterIntent.Table_Name,
                     " bp_letterintentdatevalidfrom < Current_date AND bp_letterintentdatevalidto > current_date and c_bpartner_id = ?",
                     null).setClient_ID().setParameters(mbp.get_ID()).first();
@@ -492,6 +496,42 @@ public class FromCredemProcess extends SvrProcess {
             il.setC_Tax_ID(invTax.get_ID());
             linee.add(il);
         }
+
+        List<DatiCassaPrevidenzialeType> datiCassa =
+                body.getDatiGenerali().getDatiGeneraliDocumento().getDatiCassaPrevidenziale();
+
+        
+        for (DatiCassaPrevidenzialeType dato : datiCassa) {
+            MInvoiceLine il = new MInvoiceLine(getCtx(), -1, null);
+            il.setInvoice(invoice);
+            il.setName("Contributo previdenziale " + dato.getTipoCassa().value() + " "
+                    + dato.getAlCassa());
+            il.setDescription("Contributo previdenziale " + dato.getTipoCassa().value() + " "
+                    + dato.getAlCassa());
+            il.setPrice(dato.getImportoContributoCassa());
+            il.setQtyEntered(BigDecimal.ONE);
+            il.setQtyInvoiced(BigDecimal.ONE);
+
+            MTax invTax = taxes.stream().filter(tax -> {
+                if (dato.getNatura() != null && tax.get_ValueAsString("LIT_XMLInvoice_TaxType")
+                        .startsWith(dato.getNatura().value())) {
+                    return true;
+                }
+                if (tax.getC_CountryGroupFrom() != null && registroIva != null) {
+                    return tax.getRate().compareTo(dato.getAliquotaIVA()) == 0
+                            && tax.getSOPOType().equals("B")
+                            && tax.getC_CountryGroupFrom_ID() == registroIva
+                                    .getC_CountryGroupFrom_ID();
+                } else {
+                    return tax.getRate().compareTo(dato.getAliquotaIVA()) == 0
+                            && tax.getSOPOType().equals("B");
+                }
+            }).findFirst().get();
+
+            il.setC_Tax_ID(invTax.get_ID());
+            linee.add(il);
+        }
+
         invoice.setInvoiceLines(linee);
 
         // TERMINI E MODALITA' PAGAMENTO, SCADENZE
@@ -529,7 +569,7 @@ public class FromCredemProcess extends SvrProcess {
                 // in idempiere al momento del completamento della fattura
                 CondizioniPagamentoType cpt = pagamento.getCondizioniPagamento();
                 ModalitaPagamentoType dpt = dettaglio.getModalitaPagamento();
-                int pTerm = parsePaymentTerm(cpt.value());
+                int pTerm = parsePaymentTermId(cpt.value());
                 // ips.set_ValueOfColumn("LIT_PaymentTermType",
                 // pTerm != -1 ? pTerm : mbp.getPO_PaymentTerm_ID());
                 ips.set_ValueOfColumn("PaymentRule", parsePaymentRule(dpt.value()));
@@ -587,9 +627,6 @@ public class FromCredemProcess extends SvrProcess {
     }
 
     private MTax getTax(final MLITVATDocTypeSequence registroIva, DettaglioLineeType linea) {
-        List<MTax> taxes =
-                new Query(getCtx(), MTax.Table_Name, "to_country_id = 214 ", null).setClient_ID()
-                        .list();
         MTax invTax = null;
         // N3.5 = Lettera d'intento
         if (linea.getNatura() != null && "N3.5".equals(linea.getNatura().value())) {
@@ -759,14 +796,37 @@ public class FromCredemProcess extends SvrProcess {
         return ref.getValue();
     }
 
-    private int parsePaymentTerm(String id) {
+    private MPaymentTerm parsePaymentTerm(String id) {
         String terminePagamento = "";
         switch (id) {
             case "TP01": // Pagamento a Rate
                 terminePagamento = "Vedi Scadenza";
                 break;
             case "TP02": // Pagamento completo
-                terminePagamento = "30gg d.f.";
+                terminePagamento = "30gg d.f. f.m.";
+                break;
+            case "TP03": // Pagamento Anticipato
+                terminePagamento = "Anticipato";
+                break;
+            default:
+                terminePagamento = null;
+                break;
+        }
+        MPaymentTerm term = new Query(getCtx(), MPaymentTerm.Table_Name, "Name = ?", null)
+                .setParameters(terminePagamento)
+                .setClient_ID()
+                .first();
+        return term;
+    }
+
+    private int parsePaymentTermId(String id) {
+        String terminePagamento = "";
+        switch (id) {
+            case "TP01": // Pagamento a Rate
+                terminePagamento = "Vedi Scadenza";
+                break;
+            case "TP02": // Pagamento completo
+                terminePagamento = "30gg d.f. f.m.";
                 break;
             case "TP03": // Pagamento Anticipato
                 terminePagamento = "Anticipato";
