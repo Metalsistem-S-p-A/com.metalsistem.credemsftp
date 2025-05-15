@@ -21,15 +21,16 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+
 import javax.xml.datatype.XMLGregorianCalendar;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathFactory;
+
 import org.adempiere.base.annotation.Process;
 import org.adempiere.model.MBroadcastMessage;
 import org.bouncycastle.cms.CMSProcessable;
@@ -62,19 +63,19 @@ import org.compiere.process.SvrProcess;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
-import org.globalqss.model.I_LCO_WithholdingType;
 import org.globalqss.model.MLCOInvoiceWithholding;
 import org.idempiere.broadcast.BroadcastMsgUtil;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
+
 import com.metalsistem.credemsftp.model.M_EsitoCredem;
 import com.metalsistem.credemsftp.utils.InvoiceReceived;
 import com.metalsistem.credemsftp.utils.PdfUtils;
 import com.metalsistem.credemsftp.utils.Utils;
+
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.AllegatiType;
-import it.cnet.idempiere.LIT_E_Invoice.modelXML2.CondizioniPagamentoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiAnagraficiCedenteType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiCassaPrevidenzialeType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiGeneraliDocumentoType;
@@ -431,7 +432,6 @@ public class FromCredemProcess extends SvrProcess {
 
         mbp.setIsVendor(true);
 
-
         invoice.setBPartner(mbp);
 
         // LOCATION
@@ -466,10 +466,9 @@ public class FromCredemProcess extends SvrProcess {
                 .equals(body.getDatiBeniServizi().getDatiRiepilogo().get(0).getNatura().value())) {
 
             MBPLetterIntent letter = new Query(Env.getCtx(), MBPLetterIntent.Table_Name,
-                    " isSOTrx = 'N' "
-                    + "AND bp_letterintentdatevalidfrom < Current_date "
-                    + "AND bp_letterintentdatevalidto > current_date "
-                    + "AND c_bpartner_id = ?",
+                    " isSOTrx = 'N' " + "AND bp_letterintentdatevalidfrom < Current_date "
+                            + "AND bp_letterintentdatevalidto > current_date "
+                            + "AND c_bpartner_id = ?",
                     null).setClient_ID().setParameters(mbp.get_ID()).first();
             if (letter != null)
                 invoice.set_ValueOfColumn("c_bp_partner_letterintent_id", letter.get_ID());
@@ -529,7 +528,6 @@ public class FromCredemProcess extends SvrProcess {
 
         List<DatiCassaPrevidenzialeType> datiCassa =
                 body.getDatiGenerali().getDatiGeneraliDocumento().getDatiCassaPrevidenziale();
-
 
         for (DatiCassaPrevidenzialeType dato : datiCassa) {
             MInvoiceLine il = new MInvoiceLine(Env.getCtx(), -1, null);
@@ -643,7 +641,6 @@ public class FromCredemProcess extends SvrProcess {
         }
         invoice.setWithHoldings(acconti);
 
-
         if (mbp.getPO_PaymentTerm_ID() < 1) {
             Integer paymentTermId = new Query(Env.getCtx(), MPaymentTerm.Table_Name,
                     "isdefault = 'Y' and isactive='Y'", null).setClient_ID().firstId();
@@ -658,7 +655,6 @@ public class FromCredemProcess extends SvrProcess {
         invoice.setC_PaymentTerm_ID(mbp.getPO_PaymentTerm_ID());
         invoice.setPaymentRule(mbp.getPaymentRulePO());
 
-        System.out.println(invoice.getPaymentRule());
         invoice.setScheduledPayments(scadenze);
         invoice.setSalesRep_ID(0);
         invoice.setAD_User_ID(0);
@@ -768,7 +764,7 @@ public class FromCredemProcess extends SvrProcess {
         // mbp.set_ValueOfColumn("LIT_TaxId", codice);
         mbp.setTaxID(piva);
         mbp.set_ValueOfColumn("LIT_NationalIdNumber",
-                anagrafica.getCodiceFiscale() != null ? anagrafica.getCodiceFiscale() : piva);
+                !isBlank(anagrafica.getCodiceFiscale()) ? anagrafica.getCodiceFiscale() : piva);
 
         if (anagrafica.getAnagrafica().getDenominazione() != null)
             mbp.setName(anagrafica.getAnagrafica().getDenominazione());
@@ -787,6 +783,10 @@ public class FromCredemProcess extends SvrProcess {
         return mbp;
     }
 
+    private boolean isBlank(String string) {
+        return string == null || string.isBlank();
+    }
+    
     private void publishNewBpMessage(MBPartner mbp) {
         MBroadcastMessage msg = new MBroadcastMessage(Env.getCtx(), 0, null);
         MRole role = new Query(Env.getCtx(), MRole.Table_Name,
@@ -877,87 +877,5 @@ public class FromCredemProcess extends SvrProcess {
                 .setParameters(modalitàPagamento)
                 .first();
         return ref.getValue();
-    }
-
-    private String getNamePaymentRule(String id) {
-        String modalitàPagamento = "";
-        switch (id) {
-            case "MP01":
-                modalitàPagamento = "Mixed POS Payment";
-                break;
-            case "MP02":
-                modalitàPagamento = "Check";
-                break;
-            case "MP05":
-                modalitàPagamento = "Direct Deposit";
-                break;
-            case "MP08":
-                modalitàPagamento = "Credit Card";
-                break;
-            case "MP09":
-                modalitàPagamento = "RID";
-                break;
-            case "MP12":
-                modalitàPagamento = "Direct Debit";
-                break;
-            default:
-                modalitàPagamento = "Direct Debit";
-                break;
-        }
-        MRefList ref = new Query(Env.getCtx(), MRefList.Table_Name,
-                "AD_Ref_List.Name like ? AND re.name = '_Payment Rule' ", null)
-                .addJoinClause(
-                        "JOIN ad_reference re on re.ad_reference_id = AD_Ref_List.ad_reference_id ")
-                .setParameters(modalitàPagamento)
-                .first();
-        return ref.get_Translation("Name", Env.getAD_Language(Env.getCtx()));
-    }
-
-    private MPaymentTerm parsePaymentTerm(String id) {
-        String terminePagamento = "";
-        switch (id) {
-            case "TP01": // Pagamento a Rate
-                terminePagamento = "Vedi Scadenza";
-                break;
-            case "TP02": // Pagamento completo
-                terminePagamento = "30gg d.f. f.m.";
-                break;
-            case "TP03": // Pagamento Anticipato
-                terminePagamento = "Anticipato";
-                break;
-            default:
-                terminePagamento = null;
-                break;
-        }
-        MPaymentTerm term = new Query(Env.getCtx(), MPaymentTerm.Table_Name, "Name = ?", null)
-                .setParameters(terminePagamento)
-                .setClient_ID()
-                .first();
-        return term;
-    }
-
-    private int parsePaymentTermId(String id) {
-        String terminePagamento = "";
-        switch (id) {
-            case "TP01": // Pagamento a Rate
-                terminePagamento = "Vedi Scadenza";
-                break;
-            case "TP02": // Pagamento completo
-                terminePagamento = "30gg d.f. f.m.";
-                break;
-            case "TP03": // Pagamento Anticipato
-                terminePagamento = "Anticipato";
-                break;
-            default:
-                terminePagamento = null;
-                break;
-        }
-        MPaymentTerm term = new Query(Env.getCtx(), MPaymentTerm.Table_Name, "Name = ?", null)
-                .setParameters(terminePagamento)
-                .setClient_ID()
-                .first();
-        if (term == null || terminePagamento == null)
-            return -1;
-        return term.get_ID();
     }
 }
