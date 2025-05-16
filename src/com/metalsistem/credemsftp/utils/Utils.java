@@ -10,4 +10,9 @@ public class Utils {
 		String err_message = Msg.translate(Env.getAD_Language(Env.getCtx()), errorName);
 		return MessageFormat.format(err_message, args);
 	}
+
+	public static boolean isBlank(String string) {
+		return string == null || string.isBlank();
+	}
+
 }

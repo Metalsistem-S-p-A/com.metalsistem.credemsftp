@@ -2,16 +2,22 @@ package com.metalsistem.credemsftp;
 
 import java.io.File;
 import java.io.FileInputStream;
+
 import org.adempiere.base.annotation.Process;
 import org.compiere.process.ProcessInfoParameter;
 import org.compiere.process.SvrProcess;
+
+import com.metalsistem.credemsftp.utils.InvoiceParser;
 import com.metalsistem.credemsftp.utils.InvoiceReceived;
+import com.metalsistem.credemsftp.utils.InvoiceService;
 
 @Process
 public class ManualImportProcess extends SvrProcess {
 
     String xml;
-
+    private final InvoiceParser invoiceParser = new InvoiceParser();
+    private final InvoiceService invoiceService = new InvoiceService();
+    
     @Override
     protected void prepare() {
         ProcessInfoParameter[] params = getParameter();
@@ -30,12 +36,10 @@ public class ManualImportProcess extends SvrProcess {
         byte[] data = is.readAllBytes();
         is.close();
 
-        FromCredemProcess fcp = new FromCredemProcess();
-        fcp.prepareTaxes();
-        InvoiceReceived inv = fcp.getInvoiceFromXml(data);
+        InvoiceReceived inv = invoiceParser.getInvoiceFromXml(data);
         if (inv != null) {
-            inv = fcp.saveInvoice(inv);
-            fcp.archiveEInvoice(data, inv);
+            inv = invoiceService.saveInvoice(inv);
+            invoiceService.archiveEInvoice(data, inv);
         }
         return "Processo completato";
     }
