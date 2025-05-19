@@ -99,11 +99,6 @@ public class InvoiceService {
 
 			for (MLCOInvoiceWithholding wh : inv.getWithHoldings()) {
 				wh.setC_Invoice_ID(inv.get_ID());
-				System.out.println(wh.getLCO_WithholdingType_ID());
-				System.out.println(wh.getC_Tax_ID());
-				System.out.println(wh.getTaxAmt());
-				System.out.println(wh.getTaxBaseAmt());
-
 				wh.saveEx();
 			}
 		} else {

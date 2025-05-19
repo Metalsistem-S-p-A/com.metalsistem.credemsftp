@@ -130,11 +130,16 @@ public class FromCredemProcess extends SvrProcess {
 					byte[] xml = invoiceParser.getXml(entry, sftp);
 					inv = invoiceParser.getInvoiceFromXml(xml);
 					if (inv != null) {
-						inv = invoiceService.saveInvoice(inv);
-						if (inv.get_ID() > 0)
-							importedInvoices++;
-						invoiceService.archiveEInvoice(xml, inv);
-						sftp.rm(entry.getPath());
+						try {
+							inv = invoiceService.saveInvoice(inv);
+							if (inv.get_ID() > 0)
+								importedInvoices++;
+							invoiceService.archiveEInvoice(xml, inv);
+							sftp.rm(entry.getPath());
+						} catch (Exception e) {
+							log.warning("Fattura non importata, errore durante il salvataggio");
+							e.printStackTrace();
+						}
 					}
 				} else if (parts[0].length() >= 16 && credemId.contains(parts[0].substring(10, 15))) {
 					// ELABORO ESITO

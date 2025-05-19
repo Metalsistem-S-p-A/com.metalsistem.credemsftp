@@ -39,6 +39,7 @@ import org.compiere.model.MRegion;
 import org.compiere.model.MRole;
 import org.compiere.model.MTax;
 import org.compiere.model.MUOM;
+import org.compiere.model.MWindow;
 import org.compiere.model.Query;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
@@ -74,42 +75,47 @@ import net.schmizz.sshj.sftp.SFTPClient;
 
 public class InvoiceParser {
 	private static final CLogger log = CLogger.getCLogger(InvoiceParser.class);
-
-	private List<MTax> taxes = new ArrayList<MTax>();
-	private List<TipoDocumentoType> bannedDocumentType = List.of(TipoDocumentoType.TD_04, TipoDocumentoType.TD_16,
-			TipoDocumentoType.TD_17, TipoDocumentoType.TD_18);
+	private final List<MTax> taxes;
+	private final List<MUOM> uoms;
+	private static final List<TipoDocumentoType> BANNED_DOCUMENT_TYPES = List.of(TipoDocumentoType.TD_04,
+			TipoDocumentoType.TD_16, TipoDocumentoType.TD_17, TipoDocumentoType.TD_18);
 
 	public InvoiceParser() {
-		this.taxes = new Query(Env.getCtx(), MTax.Table_Name, "to_country_id = 214 ", null).setClient_ID().list();
+		taxes = loadApplicableTaxes();
+		uoms = new Query(Env.getCtx(), MUOM.Table_Name, "", null).setClient_ID().list();
+	}
+
+	private List<MTax> loadApplicableTaxes() {
+		return new Query(Env.getCtx(), MTax.Table_Name, "to_country_id = 214", null).setClient_ID().list();
 	}
 
 	public byte[] getXml(RemoteResourceInfo entry, SFTPClient sftp) throws Exception {
-		RemoteFile f = sftp.getSFTPEngine().open(entry.getPath());
-		InputStream is = f.new RemoteFileInputStream(0);
-		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		is.transferTo(baos);
+		try (RemoteFile f = sftp.getSFTPEngine().open(entry.getPath());
+				InputStream is = f.new RemoteFileInputStream(0);
+				ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
 
-		byte[] xml = baos.toByteArray();
-		baos.close();
-		is.close();
+			is.transferTo(baos);
+			byte[] xml = baos.toByteArray();
 
-		if (entry.getName().toLowerCase().endsWith(".p7m")) {
-			CMSSignedData signature = new CMSSignedData(xml);
-			CMSProcessable sc = signature.getSignedContent();
-			xml = (byte[]) sc.getContent();
+			if (entry.getName().toLowerCase().endsWith(".p7m")) {
+				CMSSignedData signature = new CMSSignedData(xml);
+				CMSProcessable sc = signature.getSignedContent();
+				xml = (byte[]) sc.getContent();
+			}
+
+			return removeBOMIfPresent(xml);
 		}
+	}
 
+	private byte[] removeBOMIfPresent(byte[] xml) {
 		ByteBuffer bb = ByteBuffer.wrap(xml);
 		byte[] bom = new byte[3];
-		bb.get(bom, 0, bom.length);
-
-		log.info("Recupero informazioni fattura");
+		bb.get(bom);
 		String content = new String(Hex.encode(bom));
 		if ("efbbbf".equalsIgnoreCase(content)) {
 			xml = new byte[xml.length - 3];
-			bb.get(xml, 0, xml.length);
+			bb.get(xml);
 		}
-		f.close();
 		return xml;
 	}
 
@@ -123,55 +129,27 @@ public class InvoiceParser {
 		// TODO: Gestire caso di molteplici body(?)
 		InvoiceReceived invoice = new InvoiceReceived(new MInvoice(Env.getCtx(), 0, null));
 		FatturaElettronicaBodyType body = fattura.getFatturaElettronicaBody().get(0);
-		DatiGeneraliDocumentoType datiGeneraliDocumento = body.getDatiGenerali().getDatiGeneraliDocumento();
-		if (bannedDocumentType.contains(datiGeneraliDocumento.getTipoDocumento())) {
-			// Non serve importare questo tipo di documento
+		if (isBannedDocument(body)) {
 			return null;
 		}
-		invoice.setAD_Org_ID(Env.getAD_Org_ID(Env.getCtx()));
-		invoice.setIsSOTrx(false);
 
-		XMLGregorianCalendar gregorianDate = datiGeneraliDocumento.getData();
-		invoice.setDateInvoiced(new Timestamp(gregorianDate.toGregorianCalendar().getTimeInMillis()));
+		DatiGeneraliDocumentoType datiGeneraliDocumento = body.getDatiGenerali().getDatiGeneraliDocumento();
+		invoice.setIsSOTrx(false);
+		invoice.setAD_Org_ID(Env.getAD_Org_ID(Env.getCtx()));
 		invoice.setDocumentNo(datiGeneraliDocumento.getNumero());
+		invoice.setDateInvoiced(toTimestamp(datiGeneraliDocumento.getData()));
+		invoice.setGrandTotal(datiGeneraliDocumento.getImportoTotaleDocumento());
 		invoice.setC_Currency_ID(MCurrency.get(datiGeneraliDocumento.getDivisa()).get_ID());
 
 		// TIPO DOCUMENTO
-		MDocType docType;
-		invoice.set_ValueOfColumn("LIT_FEPA_DOCTYPE", datiGeneraliDocumento.getTipoDocumento().value());
-		docType = new Query(Env.getCtx(), MDocType.Table_Name, "lit_fepa_doctype = ? and issotrx='N' ", null)
-				.setClient_ID()
-				.setParameters(datiGeneraliDocumento.getTipoDocumento().value())
-				.first();
-		if (docType == null) {
-			docType = new Query(Env.getCtx(), MDocType.Table_Name, "lit_fepa_doctype = 'TD01' and issotrx='N' ", null)
-					.setClient_ID()
-					.first();
-		}
+		MDocType docType = findDocType(datiGeneraliDocumento);
+
 		invoice.setC_DocType_ID(docType.get_ID());
 		invoice.setC_DocTypeTarget_ID(docType.get_ID());
+		invoice.set_ValueOfColumn("LIT_FEPA_DOCTYPE", datiGeneraliDocumento.getTipoDocumento().value());
 
 		// BUSINESS PARTNER
-		String codice = fattura.getFatturaElettronicaHeader()
-				.getCedentePrestatore()
-				.getDatiAnagrafici()
-				.getIdFiscaleIVA()
-				.getIdCodice();
-		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name, "? in (taxID, LIT_NationalIDNumber)", null)
-				.setClient_ID()
-				.setParameters(codice)
-				.first();
-
-		if (mbp == null) {
-			mbp = createAndSaveBusinessPartner(fattura, codice);
-			publishNewBpMessage(mbp);
-			MBPartnerLocation mbpLocation = getBPLocationFromEinvoice(fattura);
-			mbpLocation.setC_BPartner_ID(mbp.get_ID());
-			mbpLocation.saveEx();
-			mbp.setPrimaryC_BPartner_Location_ID(mbpLocation.get_ID());
-			mbp.saveEx();
-		}
-		mbp.setIsVendor(true);
+		MBPartner mbp = findOrCreateBPartner(fattura);
 
 		invoice.setC_PaymentTerm_ID(mbp.getPO_PaymentTerm_ID());
 		invoice.setPaymentRule(mbp.getPaymentRulePO());
@@ -179,15 +157,9 @@ public class InvoiceParser {
 
 		// LOCATION
 		MBPartnerLocation mbpLocation = mbp.getPrimaryC_BPartner_Location();
-		MCountry to = new MCountry(Env.getCtx(), 214, null);
-		if (mbpLocation.get_ID() <= 0) {
-			mbpLocation = getBPLocationFromEinvoice(fattura);
-			mbpLocation.setC_BPartner_ID(mbp.get_ID());
-			mbpLocation.saveEx();
-			mbp.setPrimaryC_BPartner_Location_ID(mbpLocation.get_ID());
-			mbp.saveEx();
-		}
 		invoice.setC_BPartner_Location_ID(mbp.getPrimaryC_BPartner_Location_ID());
+
+		MCountry to = new MCountry(Env.getCtx(), 214, null);
 		MCountry from = mbpLocation.getLocation(true).getCountry();
 
 		// REGISTRO IVA
@@ -198,11 +170,6 @@ public class InvoiceParser {
 		} else {
 			registroIva = null;
 		}
-
-		invoice.setGrandTotal(datiGeneraliDocumento.getImportoTotaleDocumento());
-
-		List<MInvoiceLine> linee = new ArrayList<MInvoiceLine>();
-		List<MUOM> uoms = new Query(Env.getCtx(), MUOM.Table_Name, "", null).setClient_ID().list();
 
 		// LETTERA D'INTENTO
 		if (body.getDatiBeniServizi().getDatiRiepilogo().get(0).getNatura() != null
@@ -217,15 +184,17 @@ public class InvoiceParser {
 		}
 
 		// LINEE
+		List<MInvoiceLine> linee = new ArrayList<MInvoiceLine>();
 		BigDecimal imponibile = BigDecimal.ZERO;
 		for (DettaglioLineeType linea : body.getDatiBeniServizi().getDettaglioLinee()) {
 			MInvoiceLine il = new MInvoiceLine(Env.getCtx(), -1, null);
-			MTax invTax = getTax(registroIva, linea);
 			il.setInvoice(invoice);
-			il.setLine(linea.getNumeroLinea() * 10); // iDempiere Standard
 			il.setName(linea.getDescrizione());
 			il.setPrice(linea.getPrezzoUnitario());
+			il.setLine(linea.getNumeroLinea() * 10); // iDempiere Standard
 			il.setDescription(linea.getDescrizione());
+
+			MTax invTax = getTax(registroIva, linea);
 			il.setC_Tax_ID(invTax.get_ID());
 
 			if (invTax.getRate().compareTo(BigDecimal.ZERO) > 0) {
@@ -263,6 +232,7 @@ public class InvoiceParser {
 			linee.add(il);
 		}
 
+		// CASSA PREVIDENZIALE
 		List<DatiCassaPrevidenzialeType> datiCassa = body.getDatiGenerali()
 				.getDatiGeneraliDocumento()
 				.getDatiCassaPrevidenziale();
@@ -270,11 +240,12 @@ public class InvoiceParser {
 		for (DatiCassaPrevidenzialeType dato : datiCassa) {
 			MInvoiceLine il = new MInvoiceLine(Env.getCtx(), -1, null);
 			il.setInvoice(invoice);
-			il.setName("Contributo previdenziale " + dato.getTipoCassa().value() + " " + dato.getAlCassa());
-			il.setDescription("Contributo previdenziale " + dato.getTipoCassa().value() + " " + dato.getAlCassa());
-			il.setPrice(dato.getImportoContributoCassa());
 			il.setQtyEntered(BigDecimal.ONE);
 			il.setQtyInvoiced(BigDecimal.ONE);
+			il.setPrice(dato.getImportoContributoCassa());
+			il.setName("Contributo previdenziale " + dato.getTipoCassa().value() + " " + dato.getAlCassa());
+			il.setDescription("Contributo previdenziale " + dato.getTipoCassa().value() + " " + dato.getAlCassa());
+
 			if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
 				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
 				il.setProduct(prod);
@@ -303,8 +274,8 @@ public class InvoiceParser {
 		invoice.setScheduledPayments(scadenze);
 
 		// RITENUTE
-		List<MLCOInvoiceWithholding> riteunute = parseDatiRitenuta(imponibile,
-				body.getDatiGenerali().getDatiGeneraliDocumento().getDatiRitenuta());
+		List<DatiRitenutaType> datiRitenuta = body.getDatiGenerali().getDatiGeneraliDocumento().getDatiRitenuta();
+		List<MLCOInvoiceWithholding> riteunute = parseDatiRitenuta(imponibile, datiRitenuta);
 		invoice.setWithHoldings(riteunute);
 
 		// ALLEGATI
@@ -402,9 +373,8 @@ public class InvoiceParser {
 		for (DatiRitenutaType ritenuta : ritenute) {
 			MLCOInvoiceWithholding acconto = new MLCOInvoiceWithholding(Env.getCtx(), 0, null);
 			int typeId = DB.getSQLValue(null,
-					"select * from lco_withholdingType where LIT_WithHoldingTypeEInv = ? and ad_client_id = ?",
+					"select lco_withholdingType_id from lco_withholdingType where LIT_WithHoldingTypeEInv  LIKE '%' || ? || '%'  and ad_client_id = ?",
 					ritenuta.getTipoRitenuta().value(), Env.getAD_Client_ID(Env.getCtx()));
-			System.out.println(typeId);
 			List<MTax> impostaRitenute = new Query(Env.getCtx(), MTax.Table_Name, "Name like 'Ritenuta%'", null)
 					.setClient_ID()
 					.list();
@@ -412,7 +382,6 @@ public class InvoiceParser {
 			MTax imposta = impostaRitenute.stream().filter(tax -> {
 				return tax.getName().contains(ritenuta.getAliquotaRitenuta().intValue() + "% A");
 			}).findFirst().get();
-			System.out.print(imposta);
 
 			acconto.setLCO_WithholdingType_ID(typeId);
 			acconto.setC_Tax_ID(imposta.get_ID());
@@ -482,14 +451,15 @@ public class InvoiceParser {
 
 	private void publishNewBpMessage(MBPartner mbp) {
 		MBroadcastMessage msg = new MBroadcastMessage(Env.getCtx(), 0, null);
-		MRole role = new Query(Env.getCtx(), MRole.Table_Name, "name = 'Amministrazione (responsabili)'", null)
-				.setClient_ID()
-				.first();
+		MRole role = new Query(Env.getCtx(), MRole.Table_Name, "name = 'Amministrazione'", null).setClient_ID().first();
 		if (role == null) {
 			role = new Query(Env.getCtx(), MRole.Table_Name, "name like 'Amministratore%'", null).setClient_ID()
 					.first();
 		}
-		msg.setBroadcastMessage(Utils.getMessage("LIT_MsInfoBPCreated", mbp.getName()));
+		int winUUID = Env.getZoomWindowID(MBPartner.Table_ID, mbp.get_ID());
+		MWindow bpWindow = MWindow.get(winUUID);
+		msg.setBroadcastMessage(
+				Utils.getMessage("LIT_MsInfoBPCreated", msg.getUrlZoom(mbp, bpWindow.get_UUID(), mbp.getName())));
 		msg.setBroadcastType(MBroadcastMessage.BROADCASTTYPE_ImmediatePlusLogin);
 		msg.setBroadcastFrequency(MBroadcastMessage.BROADCASTFREQUENCY_UntilExpirationOrAcknowledge);
 		msg.setTarget(MBroadcastMessage.TARGET_Role);
@@ -566,6 +536,54 @@ public class InvoiceParser {
 			log.warning("Impossibile creare Business Partner Bank Account");
 			log.warning(e.getMessage());
 		}
+	}
+
+	private boolean isBannedDocument(FatturaElettronicaBodyType body) {
+		return BANNED_DOCUMENT_TYPES.contains(body.getDatiGenerali().getDatiGeneraliDocumento().getTipoDocumento());
+	}
+
+	private Timestamp toTimestamp(XMLGregorianCalendar calendar) {
+		return new Timestamp(calendar.toGregorianCalendar().getTimeInMillis());
+	}
+
+	private MBPartner findOrCreateBPartner(FatturaElettronicaType fattura) {
+		String codice = fattura.getFatturaElettronicaHeader()
+				.getCedentePrestatore()
+				.getDatiAnagrafici()
+				.getIdFiscaleIVA()
+				.getIdCodice();
+
+		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name, "? in (taxID, LIT_NationalIDNumber)", null)
+				.setClient_ID()
+				.setParameters(codice)
+				.first();
+
+		if (mbp != null)
+			return mbp;
+
+		mbp = createAndSaveBusinessPartner(fattura, codice);
+		publishNewBpMessage(mbp);
+		MBPartnerLocation mbpLocation = getBPLocationFromEinvoice(fattura);
+		mbpLocation.setC_BPartner_ID(mbp.get_ID());
+		mbpLocation.saveEx();
+		mbp.setPrimaryC_BPartner_Location_ID(mbpLocation.get_ID());
+		mbp.setIsVendor(true);
+		mbp.saveEx();
+
+		return mbp;
+	}
+
+	private MDocType findDocType(DatiGeneraliDocumentoType dgd) {
+		String tipoDocumento = dgd.getTipoDocumento().value();
+		MDocType docType = new Query(Env.getCtx(), MDocType.Table_Name, "lit_fepa_doctype = ? and issotrx='N' ", null)
+				.setClient_ID()
+				.setParameters(tipoDocumento)
+				.first();
+		if (docType != null)
+			return docType;
+		return new Query(Env.getCtx(), MDocType.Table_Name, "lit_fepa_doctype = 'TD01' and issotrx='N' ", null)
+				.setClient_ID()
+				.first();
 	}
 
 	private String parsePaymentRule(String id) {
