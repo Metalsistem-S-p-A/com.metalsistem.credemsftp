@@ -368,7 +368,8 @@ public class InvoiceParser {
 		return res;
 	}
 
-	private List<MLCOInvoiceWithholding> parseDatiRitenuta(BigDecimal imponibile, List<DatiRitenutaType> ritenute) {
+	private List<MLCOInvoiceWithholding> parseDatiRitenuta(BigDecimal imponibile, List<DatiRitenutaType> ritenute)
+			throws Exception {
 		List<MLCOInvoiceWithholding> acconti = new ArrayList<>();
 		for (DatiRitenutaType ritenuta : ritenute) {
 			MLCOInvoiceWithholding acconto = new MLCOInvoiceWithholding(Env.getCtx(), 0, null);

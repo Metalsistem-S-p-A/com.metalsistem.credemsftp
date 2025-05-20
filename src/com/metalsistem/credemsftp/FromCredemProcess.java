@@ -128,7 +128,13 @@ public class FromCredemProcess extends SvrProcess {
 					existingInvoices++;
 					InvoiceReceived inv = null;
 					byte[] xml = invoiceParser.getXml(entry, sftp);
-					inv = invoiceParser.getInvoiceFromXml(xml);
+					try {
+						inv = invoiceParser.getInvoiceFromXml(xml);
+					} catch (Exception e) {
+						inv = null;
+						log.warning("Impossibile leggere i dati dalla fattura, fattura non importata");
+						e.printStackTrace();
+					}
 					if (inv != null) {
 						try {
 							inv = invoiceService.saveInvoice(inv);
