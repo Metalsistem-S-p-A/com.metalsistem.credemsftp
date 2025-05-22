@@ -21,18 +21,20 @@ public class InvoiceService {
 	private static final CLogger log = CLogger.getCLogger(InvoiceService.class);
 
 	public void archiveEInvoice(byte[] xml, MInvoice inv) {
+		String noDocFile = inv.getDocumentNo().replaceAll("/", "-");
+		String nomeEinv = noDocFile + "_" + inv.getC_BPartner_ID();
+		String nomeRecord = noDocFile + "_" + inv.getC_BPartner().getName();
 		ME_Invoice einv = new Query(Env.getCtx(), ME_Invoice.Table_Name, "Name = ?", null).setClient_ID()
-				.setParameters("FE: " + inv.getDocumentNo())
+				.setParameters("FE: " + nomeRecord)
 				.first();
 		if (einv == null) {
 			einv = new ME_Invoice(Env.getCtx(), 0, null);
-			String noDocFile = inv.getDocumentNo().replaceAll("/", "-");
 			einv.setBinaryData(xml);
-			einv.setName("FE: " + inv.getDocumentNo());
+			einv.setName("FE: " + nomeRecord);
 			einv.setC_DocType_ID(inv.getDocTypeID());
 			einv.setC_Invoice_ID(inv.getC_Invoice_ID());
 			einv.setDocumentNo(inv.getDocumentNo());
-			einv.setFileName("xml-" + noDocFile + ".xml");
+			einv.setFileName("xml-" + nomeEinv + ".xml");
 			einv.setDateInvoiced(inv.getDateInvoiced());
 			einv.set_ValueOfColumn("LIT_MsSyncCredem", false);
 
@@ -55,7 +57,7 @@ public class InvoiceService {
 				pdfBytes = utils.create(xml, inv, true, pdfStyle);
 				if (pdfBytes != null) {
 					MAttachmentEntry entry = new MAttachmentEntry("xml-" + noDocFile + ".xml", xml);
-					entry.setName("Fattura-" + noDocFile + ".pdf");
+					entry.setName("Fattura-" + nomeEinv + ".pdf");
 					entry.setData(pdfBytes);
 
 					attachment.addEntry(entry);
@@ -73,6 +75,16 @@ public class InvoiceService {
 				.setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced())
 				.first();
 		if (res == null) {
+			StringBuilder notaRitenute = new StringBuilder();
+			for (MLCOInvoiceWithholding wh : inv.getWithHoldings()) {
+				notaRitenute.append("- Ritenuta ")
+						.append(wh.getC_Tax().getRate())
+						.append("%: ")
+						.append(wh.getTaxAmt())
+						.append(" EUR \n");
+
+			}
+			inv.set_ValueOfColumn("Note", notaRitenute.toString());
 			inv.saveEx();
 			log.info("Fattura importata");
 
@@ -97,10 +109,6 @@ public class InvoiceService {
 			}
 			log.info("Scadenze Fattura importate");
 
-			for (MLCOInvoiceWithholding wh : inv.getWithHoldings()) {
-				wh.setC_Invoice_ID(inv.get_ID());
-				wh.saveEx();
-			}
 		} else {
 			inv = new InvoiceReceived(res);
 			log.warning("Fattura %s già importata".formatted(res.getDocumentNo()));

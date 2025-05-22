@@ -14,34 +14,35 @@ import com.metalsistem.credemsftp.utils.InvoiceService;
 @Process
 public class ManualImportProcess extends SvrProcess {
 
-    String xml;
-    private final InvoiceParser invoiceParser = new InvoiceParser();
-    private final InvoiceService invoiceService = new InvoiceService();
-    
-    @Override
-    protected void prepare() {
-        ProcessInfoParameter[] params = getParameter();
+	String xml;
+	private final InvoiceParser invoiceParser = new InvoiceParser();
+	private final InvoiceService invoiceService = new InvoiceService();
 
-        for (ProcessInfoParameter param : params) {
-            String name = param.getParameterName();
-            if ("File".equals(name)) {
-                xml = (String) param.getParameter();
-            }
-        }
-    }
+	@Override
+	protected void prepare() {
+		ProcessInfoParameter[] params = getParameter();
 
-    @Override
-    protected String doIt() throws Exception {
-        FileInputStream is = new FileInputStream(new File(xml));
-        byte[] data = is.readAllBytes();
-        is.close();
+		for (ProcessInfoParameter param : params) {
+			String name = param.getParameterName();
+			if ("File".equals(name)) {
+				xml = (String) param.getParameter();
+			}
+		}
+	}
 
-        InvoiceReceived inv = invoiceParser.getInvoiceFromXml(data);
-        if (inv != null) {
-            inv = invoiceService.saveInvoice(inv);
-            invoiceService.archiveEInvoice(data, inv);
-        }
-        return "Processo completato";
-    }
+	@Override
+	protected String doIt() throws Exception {
+		FileInputStream is = new FileInputStream(new File(xml));
+		byte[] data = is.readAllBytes();
+		is.close();
+
+		byte[] parsedData = invoiceParser.parseByteXML(data);
+		InvoiceReceived inv = invoiceParser.getInvoiceFromXml(parsedData);
+		if (inv != null) {
+			inv = invoiceService.saveInvoice(inv);
+			invoiceService.archiveEInvoice(parsedData, inv);
+		}
+		return "Processo completato";
+	}
 
 }

@@ -107,6 +107,19 @@ public class InvoiceParser {
 		}
 	}
 
+	public byte[] parseByteXML(byte[] xml) {
+		try {
+			byte[] parsed;
+			CMSSignedData signature = new CMSSignedData(xml);
+			CMSProcessable sc = signature.getSignedContent();
+			parsed = (byte[]) sc.getContent();
+			return removeBOMIfPresent(parsed);
+		} catch (Exception e) {
+			log.warning("Fattura non p7m");
+		}
+		return removeBOMIfPresent(xml);
+	}
+
 	private byte[] removeBOMIfPresent(byte[] xml) {
 		ByteBuffer bb = ByteBuffer.wrap(xml);
 		byte[] bom = new byte[3];
@@ -250,6 +263,7 @@ public class InvoiceParser {
 				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
 				il.setProduct(prod);
 			}
+
 			MTax invTax = taxes.stream().filter(tax -> {
 				if (dato.getNatura() != null
 						&& tax.get_ValueAsString("LIT_XMLInvoice_TaxType").startsWith(dato.getNatura().value())) {
@@ -386,7 +400,6 @@ public class InvoiceParser {
 
 			acconto.setLCO_WithholdingType_ID(typeId);
 			acconto.setC_Tax_ID(imposta.get_ID());
-
 			acconto.setTaxBaseAmt(imponibile);
 			acconto.setTaxAmt(ritenuta.getImportoRitenuta());
 			acconti.add(acconto);
