@@ -104,6 +104,8 @@ public class FromCredemProcess extends SvrProcess {
 
 	@Override
 	protected String doIt() throws Exception {
+		
+		
 		try (final SSHClient ssh = new SSHClient()) {
 			if (certificateFingerprint.equals("test")) {
 				ssh.addHostKeyVerifier(new PromiscuousVerifier());

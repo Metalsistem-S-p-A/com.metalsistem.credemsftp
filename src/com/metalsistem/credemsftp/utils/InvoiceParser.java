@@ -58,6 +58,7 @@ import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiAnagraficiCedenteType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiCassaPrevidenzialeType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiGeneraliDocumentoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiPagamentoType;
+import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiRiepilogoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiRitenutaType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DettaglioLineeType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DettaglioPagamentoType;
@@ -242,6 +243,38 @@ public class InvoiceParser {
 					}
 				}
 			}
+			linee.add(il);
+		}
+
+		for (DatiRiepilogoType riepilogo : body.getDatiBeniServizi().getDatiRiepilogo()) {
+			if (riepilogo.getArrotondamento() == null) {
+				continue;
+			}
+			MInvoiceLine il = new MInvoiceLine(Env.getCtx(), -1, null);
+			il.setInvoice(invoice);
+			il.setName("Arrotondamento");
+			il.setPrice(riepilogo.getArrotondamento());
+			il.setDescription("Arrotondamento");
+			il.setQtyEntered(BigDecimal.ONE);
+			il.setQtyInvoiced(BigDecimal.ONE);
+			if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
+				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
+				il.setProduct(prod);
+			}
+			MTax invTax = taxes.stream().filter(tax -> {
+				if (riepilogo.getNatura() != null
+						&& tax.get_ValueAsString("LIT_XMLInvoice_TaxType").startsWith(riepilogo.getNatura().value())) {
+					return true;
+				}
+				if (tax.getC_CountryGroupFrom() != null && registroIva != null) {
+					return tax.getRate().compareTo(riepilogo.getAliquotaIVA()) == 0 && tax.getSOPOType().equals("B")
+							&& tax.getC_CountryGroupFrom_ID() == registroIva.getC_CountryGroupFrom_ID();
+				} else {
+					return tax.getRate().compareTo(riepilogo.getAliquotaIVA()) == 0 && tax.getSOPOType().equals("B");
+				}
+			}).findFirst().get();
+
+			il.setC_Tax_ID(invTax.get_ID());
 			linee.add(il);
 		}
 

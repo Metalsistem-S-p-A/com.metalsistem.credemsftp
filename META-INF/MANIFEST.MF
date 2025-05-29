@@ -43,7 +43,8 @@ Import-Package: it.cnet.idempiere.LIT_E_Invoice.model,
  it.cnet.idempiere.LIT_E_Invoice.utilXML,
  it.cnet.idempiere.lettIntent.model,
  org.globalqss.model
-Service-Component: OSGI-INF/com.metalsistem.credemsftp.factories.FromCredemProcessFactory.xml,
+Service-Component: OSGI-INF/com.metalsistem.credemsftp.CheckVatNumberEventHandler.xml,
+ OSGI-INF/com.metalsistem.credemsftp.factories.FromCredemProcessFactory.xml,
  OSGI-INF/com.metalsistem.credemsftp.factories.ManualImportProcessFactory.xml,
  OSGI-INF/com.metalsistem.credemsftp.factories.ToCredemProcessFactory.xml,
  OSGI-INF/com.metalsistem.credemsftp.model.LIT_MsEsitoCredemFactory.xml

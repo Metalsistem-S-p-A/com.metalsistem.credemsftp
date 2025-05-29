@@ -2,17 +2,15 @@ package com.metalsistem.credemsftp.utils;
 
 import java.util.List;
 
-import org.compiere.model.Query;
-import org.compiere.model.MProcess;
-import org.compiere.model.MInvoice;
 import org.compiere.model.MAttachment;
-import org.compiere.model.MInvoiceLine;
 import org.compiere.model.MAttachmentEntry;
+import org.compiere.model.MInvoice;
+import org.compiere.model.MInvoiceLine;
 import org.compiere.model.MInvoicePaySchedule;
-
-import org.compiere.util.Env;
+import org.compiere.model.MProcess;
+import org.compiere.model.Query;
 import org.compiere.util.CLogger;
-
+import org.compiere.util.Env;
 import org.globalqss.model.MLCOInvoiceWithholding;
 
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
@@ -39,7 +37,7 @@ public class InvoiceService {
 			einv.set_ValueOfColumn("LIT_MsSyncCredem", false);
 
 			einv.saveEx();
-
+			
 			MAttachment attachment = new MAttachment(Env.getCtx(), 0, null);
 			attachment.setRecord_ID(einv.get_ID());
 			attachment.setAD_Table_ID(ME_Invoice.Table_ID);
