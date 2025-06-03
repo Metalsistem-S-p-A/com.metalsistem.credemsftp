@@ -2,6 +2,7 @@ package com.metalsistem.credemsftp.utils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 
 import org.compiere.model.MAttachmentEntry;
 import org.compiere.model.MInvoice;
@@ -16,10 +17,16 @@ public class InvoiceReceived extends MInvoice {
 	private List<MAttachmentEntry> attachmentEntries = new ArrayList<MAttachmentEntry>();
 	private List<MInvoicePaySchedule> scheduledPayments = new ArrayList<MInvoicePaySchedule>();
 	private List<MInvoiceLine> invoiceLines = new ArrayList<MInvoiceLine>();
-	private List<MLCOInvoiceWithholding> withHoldings= new ArrayList<MLCOInvoiceWithholding>();
+	private List<MLCOInvoiceWithholding> withHoldings = new ArrayList<MLCOInvoiceWithholding>();
+	private String errorMsg = "";
 
-	public InvoiceReceived(MInvoice copy) {
-		super(copy);
+	public InvoiceReceived(Properties properties, int i, String copy) {
+		super(properties, i, copy);
+	}
+
+	public InvoiceReceived(MInvoice mInvoice) {
+		// TODO Auto-generated constructor stub
+		super(mInvoice);
 	}
 
 	public List<MAttachmentEntry> getAttachmentEntries() {
@@ -46,12 +53,20 @@ public class InvoiceReceived extends MInvoice {
 		this.invoiceLines = invoiceLines;
 	}
 
-    public List<MLCOInvoiceWithholding> getWithHoldings() {
-        return withHoldings;
-    }
+	public List<MLCOInvoiceWithholding> getWithHoldings() {
+		return withHoldings;
+	}
 
-    public void setWithHoldings(List<MLCOInvoiceWithholding> withHoldings) {
-        this.withHoldings = withHoldings;
-    }
+	public void setWithHoldings(List<MLCOInvoiceWithholding> withHoldings) {
+		this.withHoldings = withHoldings;
+	}
+
+	public String getErrorMsg() {
+		return errorMsg;
+	}
+
+	public void setErrorMsg(String errorMsg) {
+		this.errorMsg = errorMsg;
+	}
 
 }

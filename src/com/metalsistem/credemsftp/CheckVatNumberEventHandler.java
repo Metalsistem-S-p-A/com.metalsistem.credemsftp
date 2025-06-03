@@ -68,7 +68,7 @@ public class CheckVatNumberEventHandler extends AbstractEventHandler {
 				Timestamp dataPo = inv.getDateAcct();
 				String numeroPo = inv.get_ValueAsString("vatdocumentno");
 				if (numeroPo.isBlank())
-					numeroPo = MSequence.getDocumentNoFromSeq(seq, inv.get_TrxName(), inv);// MSequence__patch:
+					numeroPo = MSequence.getDocumentNoFromSeq(seq, inv.get_TrxName(), inv);
 
 				String sql = "select VATDocumentNo, DateAcct from c_invoice "
 						+ "where lit_vatjournal_id = ? and ad_org_id = ? and vatdocumentno is not null order by DateAcct desc, vatdocumentno desc  "

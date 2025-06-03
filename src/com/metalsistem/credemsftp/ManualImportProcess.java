@@ -4,12 +4,17 @@ import java.io.File;
 import java.io.FileInputStream;
 
 import org.adempiere.base.annotation.Process;
+import org.compiere.model.MInvoice;
+import org.compiere.model.MWindow;
+import org.compiere.model.PO;
 import org.compiere.process.ProcessInfoParameter;
 import org.compiere.process.SvrProcess;
+import org.compiere.util.Env;
 
 import com.metalsistem.credemsftp.utils.InvoiceParser;
 import com.metalsistem.credemsftp.utils.InvoiceReceived;
 import com.metalsistem.credemsftp.utils.InvoiceService;
+import com.metalsistem.credemsftp.utils.Utils;
 
 @Process
 public class ManualImportProcess extends SvrProcess {
@@ -32,17 +37,36 @@ public class ManualImportProcess extends SvrProcess {
 
 	@Override
 	protected String doIt() throws Exception {
+		if (Env.getAD_Org_ID(getCtx()) <= 0)
+			return Utils.getMessage("LIT_MsErrorOrgNotSelected");
+
 		FileInputStream is = new FileInputStream(new File(xml));
 		byte[] data = is.readAllBytes();
 		is.close();
 
 		byte[] parsedData = invoiceParser.parseByteXML(data);
 		InvoiceReceived inv = invoiceParser.getInvoiceFromXml(parsedData);
-		if (inv != null) {
+		if (inv.getErrorMsg().isBlank()) {
 			inv = invoiceService.saveInvoice(inv);
 			invoiceService.archiveEInvoice(parsedData, inv);
+		} else {
+			return inv.getErrorMsg();
 		}
-		return "Processo completato";
+
+		int winUUID = Env.getZoomWindowID(MInvoice.Table_ID, inv.get_ID());
+		MWindow bpWindow = MWindow.get(winUUID);
+		return "Processo completato: " + getUrlZoom(inv, bpWindow.get_UUID(), inv.getDocumentNo());
 	}
 
+	public String getUrlZoom(PO po, String windowUUID, String text) {
+		StringBuilder url = new StringBuilder("");
+		url.append("<a href=\"javascript:void(0)\" class=\"rp-href\" onclick=\"window.idempiere.zoomWindow(@"
+				+ "#clientInfo_BroadcastComponentId" + "@, '");
+		url.append(po.get_KeyColumns()[0]);
+		url.append("', '").append(po.get_ID()).append("','").append(windowUUID).append("')\">");
+		url.append(text);
+		url.append("</a>");
+
+		return url.toString();
+	}
 }

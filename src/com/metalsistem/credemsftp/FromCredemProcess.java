@@ -20,6 +20,7 @@ import org.adempiere.base.annotation.Process;
 
 import org.compiere.model.Query;
 import org.compiere.process.SvrProcess;
+import org.compiere.util.Env;
 import org.compiere.process.ProcessInfoParameter;
 
 import com.metalsistem.credemsftp.utils.Utils;
@@ -105,7 +106,6 @@ public class FromCredemProcess extends SvrProcess {
 	@Override
 	protected String doIt() throws Exception {
 		
-		
 		try (final SSHClient ssh = new SSHClient()) {
 			if (certificateFingerprint.equals("test")) {
 				ssh.addHostKeyVerifier(new PromiscuousVerifier());
@@ -124,20 +124,16 @@ public class FromCredemProcess extends SvrProcess {
 					return false;
 				}
 			});
+			if (Env.getAD_Org_ID(getCtx()) <=  0)
+				return Utils.getMessage("LIT_MsErrorOrgNotSelected");
 			for (RemoteResourceInfo entry : filelist) {
 				String[] parts = entry.getName().split("\\.");
 				if (credemId.equals(parts[1])) {
 					existingInvoices++;
 					InvoiceReceived inv = null;
 					byte[] xml = invoiceParser.getXml(entry, sftp);
-					try {
 						inv = invoiceParser.getInvoiceFromXml(xml);
-					} catch (Exception e) {
-						inv = null;
-						log.warning("Impossibile leggere i dati dalla fattura, fattura non importata");
-						e.printStackTrace();
-					}
-					if (inv != null) {
+					if (inv.getErrorMsg().isBlank()) {
 						try {
 							inv = invoiceService.saveInvoice(inv);
 							if (inv.get_ID() > 0)

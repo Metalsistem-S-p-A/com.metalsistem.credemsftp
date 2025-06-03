@@ -16,7 +16,6 @@ import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathFactory;
 
-import org.adempiere.model.MBroadcastMessage;
 import org.bouncycastle.cms.CMSProcessable;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.util.encoders.Hex;
@@ -36,16 +35,13 @@ import org.compiere.model.MPaymentTerm;
 import org.compiere.model.MProduct;
 import org.compiere.model.MRefList;
 import org.compiere.model.MRegion;
-import org.compiere.model.MRole;
 import org.compiere.model.MTax;
 import org.compiere.model.MUOM;
-import org.compiere.model.MWindow;
 import org.compiere.model.Query;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
 import org.globalqss.model.MLCOInvoiceWithholding;
-import org.idempiere.broadcast.BroadcastMsgUtil;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
@@ -80,6 +76,9 @@ public class InvoiceParser {
 	private final List<MUOM> uoms;
 	private static final List<TipoDocumentoType> BANNED_DOCUMENT_TYPES = List.of(TipoDocumentoType.TD_04,
 			TipoDocumentoType.TD_16, TipoDocumentoType.TD_17, TipoDocumentoType.TD_18);
+
+	private static boolean isNewBP = false;
+	private MBPartner bp = null;
 
 	public InvoiceParser() {
 		taxes = loadApplicableTaxes();
@@ -133,10 +132,21 @@ public class InvoiceParser {
 		return xml;
 	}
 
-	public InvoiceReceived getInvoiceFromXml(byte[] xml) throws Exception {
+	public InvoiceReceived getInvoiceFromXml(byte[] xml)  {
 		ManageXML_new manageXml = new ManageXML_new();
 		FatturaElettronicaType fattura = manageXml.importFatturaElettronica(new ByteArrayInputStream(xml));
-		return getInvoice(fattura);
+		InvoiceReceived inv = new InvoiceReceived(Env.getCtx(), 0, null);
+		try {
+			inv = getInvoice(fattura);
+		} catch (Exception e) {
+			e.printStackTrace();
+			if (isNewBP) {
+				bp.delete(false);
+				log.warning("Errore parsing fattura, nuovo BP eliminato");
+				inv.setErrorMsg("Errore durante la lettura della fattura");
+			}
+		}
+		return inv;
 	}
 
 	private InvoiceReceived getInvoice(FatturaElettronicaType fattura) throws Exception {
@@ -144,10 +154,36 @@ public class InvoiceParser {
 		InvoiceReceived invoice = new InvoiceReceived(new MInvoice(Env.getCtx(), 0, null));
 		FatturaElettronicaBodyType body = fattura.getFatturaElettronicaBody().get(0);
 		if (isBannedDocument(body)) {
-			return null;
+			invoice.setErrorMsg("Fattura non importata: tipo documento non valido");
+			return invoice;
 		}
 
 		DatiGeneraliDocumentoType datiGeneraliDocumento = body.getDatiGenerali().getDatiGeneraliDocumento();
+		String codice = fattura.getFatturaElettronicaHeader()
+				.getCedentePrestatore()
+				.getDatiAnagrafici()
+				.getIdFiscaleIVA()
+				.getIdCodice();
+
+		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name, "? in (taxID, LIT_NationalIDNumber)", null)
+				.setClient_ID()
+				.setParameters(codice)
+				.first();
+
+		if (mbp != null) {
+			MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
+					"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?", null)
+					.setClient_ID()
+					.setParameters(datiGeneraliDocumento.getNumero(), mbp.get_ID(),
+							toTimestamp(datiGeneraliDocumento.getData()))
+					.first();
+			if (res != null) {
+				// Fattura già importata
+				invoice.setErrorMsg("Fattura già presente nel sistema");
+				return invoice;
+			}
+		}
+
 		invoice.setIsSOTrx(false);
 		invoice.setAD_Org_ID(Env.getAD_Org_ID(Env.getCtx()));
 		invoice.setDocumentNo(datiGeneraliDocumento.getNumero());
@@ -163,7 +199,7 @@ public class InvoiceParser {
 		invoice.set_ValueOfColumn("LIT_FEPA_DOCTYPE", datiGeneraliDocumento.getTipoDocumento().value());
 
 		// BUSINESS PARTNER
-		MBPartner mbp = findOrCreateBPartner(fattura);
+		mbp = findOrCreateBPartner(fattura);
 
 		invoice.setC_PaymentTerm_ID(mbp.getPO_PaymentTerm_ID());
 		invoice.setPaymentRule(mbp.getPaymentRulePO());
@@ -207,7 +243,6 @@ public class InvoiceParser {
 			il.setPrice(linea.getPrezzoUnitario());
 			il.setLine(linea.getNumeroLinea() * 10); // iDempiere Standard
 			il.setDescription(linea.getDescrizione());
-
 			MTax invTax = getTax(registroIva, linea);
 			il.setC_Tax_ID(invTax.get_ID());
 
@@ -217,6 +252,10 @@ public class InvoiceParser {
 			if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
 				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
 				il.setProduct(prod);
+			}
+			if (linea.getPrezzoUnitario().compareTo(BigDecimal.ZERO) == 0) {
+				il.setIsDescription(true);
+				il.setProduct(null);
 			}
 			if (!linea.getCodiceArticolo().isEmpty()) {
 				il.set_ValueOfColumn("VendorProductNo", linea.getCodiceArticolo().get(0).getCodiceValore());
@@ -446,6 +485,8 @@ public class InvoiceParser {
 		if (linea.getNatura() != null && "N3.5".equals(linea.getNatura().value())) {
 			// Non imponibile Art 8 c.1
 			invTax = new Query(Env.getCtx(), MTax.Table_Name, "value = 'F.02'", null).setClient_ID().first();
+		} else if (linea.getPrezzoUnitario().compareTo(BigDecimal.ZERO) == 0) {
+			invTax = new Query(Env.getCtx(), MTax.Table_Name, "value = 'G.06'", null).setClient_ID().first();
 		} else {
 			invTax = taxes.stream().filter(tax -> {
 				if (tax.getC_CountryGroupFrom() != null && registroIva != null) {
@@ -494,27 +535,6 @@ public class InvoiceParser {
 
 		mbp.saveEx();
 		return mbp;
-	}
-
-	private void publishNewBpMessage(MBPartner mbp) {
-		MBroadcastMessage msg = new MBroadcastMessage(Env.getCtx(), 0, null);
-		MRole role = new Query(Env.getCtx(), MRole.Table_Name, "name = 'Amministrazione'", null).setClient_ID().first();
-		if (role == null) {
-			role = new Query(Env.getCtx(), MRole.Table_Name, "name like 'Amministratore%'", null).setClient_ID()
-					.first();
-		}
-		int winUUID = Env.getZoomWindowID(MBPartner.Table_ID, mbp.get_ID());
-		MWindow bpWindow = MWindow.get(winUUID);
-		msg.setBroadcastMessage(
-				Utils.getMessage("LIT_MsInfoBPCreated", msg.getUrlZoom(mbp, bpWindow.get_UUID(), mbp.getName())));
-		msg.setBroadcastType(MBroadcastMessage.BROADCASTTYPE_ImmediatePlusLogin);
-		msg.setBroadcastFrequency(MBroadcastMessage.BROADCASTFREQUENCY_UntilExpirationOrAcknowledge);
-		msg.setTarget(MBroadcastMessage.TARGET_Role);
-		msg.setAD_Role_ID(role.get_ID());
-		msg.setPublish("Y");
-		msg.setExpiration(Timestamp.valueOf(LocalDateTime.now().plusMonths(1)));
-		msg.saveEx();
-		BroadcastMsgUtil.publishBroadcastMessage(msg.get_ID(), null);
 	}
 
 	private MBPartnerLocation getBPLocationFromEinvoice(FatturaElettronicaType fattura) {
@@ -608,15 +628,15 @@ public class InvoiceParser {
 		if (mbp != null)
 			return mbp;
 
-		mbp = createAndSaveBusinessPartner(fattura, codice);
-		publishNewBpMessage(mbp);
 		MBPartnerLocation mbpLocation = getBPLocationFromEinvoice(fattura);
+		mbp = createAndSaveBusinessPartner(fattura, codice);
 		mbpLocation.setC_BPartner_ID(mbp.get_ID());
 		mbpLocation.saveEx();
 		mbp.setPrimaryC_BPartner_Location_ID(mbpLocation.get_ID());
 		mbp.setIsVendor(true);
 		mbp.saveEx();
-
+		isNewBP = true;
+		bp = mbp;
 		return mbp;
 	}
 
@@ -664,5 +684,9 @@ public class InvoiceParser {
 				.setParameters(modalitàPagamento)
 				.first();
 		return ref.getValue();
+	}
+
+	public static boolean getIsNewBP() {
+		return isNewBP;
 	}
 }
