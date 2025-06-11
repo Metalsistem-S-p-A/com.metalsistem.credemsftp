@@ -14,27 +14,29 @@
  *****************************************************************************/
 package com.metalsistem.credemsftp;
 
+import java.io.FileOutputStream;
 import java.util.List;
 
 import org.adempiere.base.annotation.Process;
-
+import org.compiere.model.MAttachment;
+import org.compiere.model.MAttachmentEntry;
 import org.compiere.model.Query;
+import org.compiere.process.ProcessInfoParameter;
 import org.compiere.process.SvrProcess;
 import org.compiere.util.Env;
-import org.compiere.process.ProcessInfoParameter;
 
-import com.metalsistem.credemsftp.utils.Utils;
 import com.metalsistem.credemsftp.model.M_EsitoCredem;
+import com.metalsistem.credemsftp.model.M_PendingInvoices;
 import com.metalsistem.credemsftp.utils.InvoiceParser;
-import com.metalsistem.credemsftp.utils.InvoiceService;
 import com.metalsistem.credemsftp.utils.InvoiceReceived;
+import com.metalsistem.credemsftp.utils.InvoiceService;
+import com.metalsistem.credemsftp.utils.Utils;
 
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
-
 import net.schmizz.sshj.SSHClient;
-import net.schmizz.sshj.sftp.SFTPClient;
-import net.schmizz.sshj.sftp.RemoteResourceInfo;
 import net.schmizz.sshj.sftp.RemoteResourceFilter;
+import net.schmizz.sshj.sftp.RemoteResourceInfo;
+import net.schmizz.sshj.sftp.SFTPClient;
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
 
 /**
@@ -67,6 +69,10 @@ import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
 public class FromCredemProcess extends SvrProcess {
 	private final InvoiceParser invoiceParser = new InvoiceParser();
 	private final InvoiceService invoiceService = new InvoiceService();
+//	private final StorageProvider storageProvider = new StorageProvider();
+
+	private final String backupPath = "/mnt/idempierefs/MsBackupCredem/";
+
 	private String sftpAddress;
 	private String certificateFingerprint;
 	private String userName, password;
@@ -76,6 +82,8 @@ public class FromCredemProcess extends SvrProcess {
 	private Integer importedInvoices = 0;
 	private Integer existingInvoices = 0;
 	private Integer port;
+
+//	private IArchiveStore storage;
 
 	@Override
 	protected void prepare() {
@@ -105,7 +113,7 @@ public class FromCredemProcess extends SvrProcess {
 
 	@Override
 	protected String doIt() throws Exception {
-		
+
 		try (final SSHClient ssh = new SSHClient()) {
 			if (certificateFingerprint.equals("test")) {
 				ssh.addHostKeyVerifier(new PromiscuousVerifier());
@@ -124,46 +132,68 @@ public class FromCredemProcess extends SvrProcess {
 					return false;
 				}
 			});
-			if (Env.getAD_Org_ID(getCtx()) <=  0)
+			if (Env.getAD_Org_ID(getCtx()) <= 0)
 				return Utils.getMessage("LIT_MsErrorOrgNotSelected");
+			
 			for (RemoteResourceInfo entry : filelist) {
 				String[] parts = entry.getName().split("\\.");
 				if (credemId.equals(parts[1])) {
 					existingInvoices++;
 					InvoiceReceived inv = null;
 					byte[] xml = invoiceParser.getXml(entry, sftp);
-						inv = invoiceParser.getInvoiceFromXml(xml);
+					inv = invoiceParser.getInvoiceFromXml(xml);
 					if (inv.getErrorMsg().isBlank()) {
 						try {
 							inv = invoiceService.saveInvoice(inv);
-							if (inv.get_ID() > 0)
+							if (inv.get_ID() > 0) {
 								importedInvoices++;
-							invoiceService.archiveEInvoice(xml, inv);
-							sftp.rm(entry.getPath());
+								invoiceService.archiveEInvoice(xml, inv);
+							}
 						} catch (Exception e) {
 							log.warning("Fattura non importata, errore durante il salvataggio");
 							e.printStackTrace();
 						}
+					} else {
+						M_PendingInvoices pendingInvoice = new M_PendingInvoices(Env.getCtx(), 0, null);
+						pendingInvoice.setName("Fattura: " + entry.getName());
+						pendingInvoice
+								.setDescription(inv.getErrorMsg());
+						pendingInvoice.saveEx();
+						MAttachment allegato = new MAttachment(Env.getCtx(),M_PendingInvoices.Table_ID,
+								pendingInvoice.get_ID(),pendingInvoice.get_UUID(),null);
+						MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(),xml);
+						allegato.addEntry(entryAllegato);
+						allegato.setRecord_ID(pendingInvoice.get_ID());
+						allegato.save();
 					}
+					sftp.rm(entry.getPath());
 				} else if (parts[0].length() >= 16 && credemId.contains(parts[0].substring(10, 15))) {
 					// ELABORO ESITO
 					byte[] xml = invoiceParser.getXml(entry, sftp);
-					List<M_EsitoCredem> esiti = invoiceParser.getDatiEsito(xml);
-					for (M_EsitoCredem esito : esiti) {
-						ME_Invoice einv = new Query(getCtx(), ME_Invoice.Table_Name,
-								"LIT_MsSyncCredem='Y' AND inv.VATDocumentNo = ?  AND inv.isSOTrx='Y' ", null)
-								.setParameters(esito.getDocumentNo())
-								.addJoinClause("join c_invoice inv on inv.c_invoice_id = lit_einvoice.c_invoice_id")
-								.setClient_ID()
-								.first();
-						if (einv != null) {
-							esito.setLIT_EInvoice_ID(einv.get_ID());
-							esito.saveEx();
+					try {
+						List<M_EsitoCredem> esiti = invoiceParser.getDatiEsito(xml);
+						for (M_EsitoCredem esito : esiti) {
+							ME_Invoice einv = new Query(getCtx(), ME_Invoice.Table_Name,
+									"LIT_MsSyncCredem='Y' AND inv.VATDocumentNo = ?  AND inv.isSOTrx='Y' ", null)
+									.setParameters(esito.getDocumentNo())
+									.addJoinClause("join c_invoice inv on inv.c_invoice_id = lit_einvoice.c_invoice_id")
+									.setClient_ID()
+									.first();
+							if (einv != null) {
+								esito.setLIT_EInvoice_ID(einv.get_ID());
+								esito.saveEx();
+							}
 						}
+					} catch (Exception e) {
+						String name = entry.getName();
+						FileOutputStream output = new FileOutputStream(backupPath.concat(name));
+						output.write(xml);
+						output.close();
 					}
 					sftp.rm(entry.getPath());
 				}
 			}
+
 			sftp.close();
 			ssh.close();
 			return Utils.getMessage("LIT_MsInfoImportInvResult", importedInvoices,

@@ -1,6 +1,8 @@
 package com.metalsistem.credemsftp.utils;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
@@ -107,6 +109,22 @@ public class InvoiceParser {
 		}
 	}
 
+	public byte[] getXml(File entry) throws Exception {
+		try(InputStream is = new FileInputStream(entry);
+				ByteArrayOutputStream baos = new ByteArrayOutputStream()){
+
+			is.transferTo(baos);
+			byte[] xml = baos.toByteArray();
+
+			if (entry.getName().toLowerCase().endsWith(".p7m")) {
+				CMSSignedData signature = new CMSSignedData(xml);
+				CMSProcessable sc = signature.getSignedContent();
+				xml = (byte[]) sc.getContent();
+			}
+			return removeBOMIfPresent(xml);
+		}
+	}
+
 	public byte[] parseByteXML(byte[] xml) {
 		try {
 			byte[] parsed;
@@ -132,7 +150,7 @@ public class InvoiceParser {
 		return xml;
 	}
 
-	public InvoiceReceived getInvoiceFromXml(byte[] xml)  {
+	public InvoiceReceived getInvoiceFromXml(byte[] xml) {
 		ManageXML_new manageXml = new ManageXML_new();
 		FatturaElettronicaType fattura = manageXml.importFatturaElettronica(new ByteArrayInputStream(xml));
 		InvoiceReceived inv = new InvoiceReceived(Env.getCtx(), 0, null);

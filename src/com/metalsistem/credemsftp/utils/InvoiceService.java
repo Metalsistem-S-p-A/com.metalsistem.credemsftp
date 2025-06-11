@@ -94,7 +94,9 @@ public class InvoiceService {
 			MBPartner bp = new MBPartner(Env.getCtx(), inv.getC_BPartner_ID(), null);
 			try {
 				inv.saveEx();
-				publishNewBpMessage(bp);
+				if (InvoiceParser.getIsNewBP()) {
+					publishNewBpMessage(bp);
+				}
 			} catch (Exception e) {
 				if (InvoiceParser.getIsNewBP()) {
 					bp.deleteEx(false);
