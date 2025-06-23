@@ -110,8 +110,7 @@ public class InvoiceParser {
 	}
 
 	public byte[] getXml(File entry) throws Exception {
-		try(InputStream is = new FileInputStream(entry);
-				ByteArrayOutputStream baos = new ByteArrayOutputStream()){
+		try (InputStream is = new FileInputStream(entry); ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
 
 			is.transferTo(baos);
 			byte[] xml = baos.toByteArray();
@@ -379,8 +378,14 @@ public class InvoiceParser {
 
 		// RITENUTE
 		List<DatiRitenutaType> datiRitenuta = body.getDatiGenerali().getDatiGeneraliDocumento().getDatiRitenuta();
-		List<MLCOInvoiceWithholding> riteunute = parseDatiRitenuta(imponibile, datiRitenuta);
-		invoice.setWithHoldings(riteunute);
+		List<MLCOInvoiceWithholding> ritenute = parseDatiRitenuta(imponibile, datiRitenuta);
+		invoice.setWithHoldings(ritenute);
+
+		BigDecimal totaleDocumento = datiGeneraliDocumento.getImportoTotaleDocumento();
+//		for (MLCOInvoiceWithholding rit : ritenute) {
+//			totaleDocumento = totaleDocumento.subtract(rit.getTaxAmt());
+//		}
+		invoice.setGrandTotalXML(totaleDocumento);
 
 		// ALLEGATI
 		List<MAttachmentEntry> allegati = new ArrayList<MAttachmentEntry>();
@@ -552,6 +557,7 @@ public class InvoiceParser {
 //		}
 
 		mbp.saveEx();
+		isNewBP = true;
 		return mbp;
 	}
 
@@ -653,7 +659,6 @@ public class InvoiceParser {
 		mbp.setPrimaryC_BPartner_Location_ID(mbpLocation.get_ID());
 		mbp.setIsVendor(true);
 		mbp.saveEx();
-		isNewBP = true;
 		bp = mbp;
 		return mbp;
 	}
@@ -706,5 +711,9 @@ public class InvoiceParser {
 
 	public static boolean getIsNewBP() {
 		return isNewBP;
+	}
+
+	public static void setIsNewBP(boolean value) {
+		isNewBP = value;
 	}
 }

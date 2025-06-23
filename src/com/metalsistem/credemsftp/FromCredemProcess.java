@@ -134,13 +134,21 @@ public class FromCredemProcess extends SvrProcess {
 			});
 			if (Env.getAD_Org_ID(getCtx()) <= 0)
 				return Utils.getMessage("LIT_MsErrorOrgNotSelected");
-			
+
 			for (RemoteResourceInfo entry : filelist) {
 				String[] parts = entry.getName().split("\\.");
 				if (credemId.equals(parts[1])) {
 					existingInvoices++;
 					InvoiceReceived inv = null;
-					byte[] xml = invoiceParser.getXml(entry, sftp);
+					byte[] xml = null;
+					try {
+						xml = invoiceParser.getXml(entry, sftp);
+					} catch (Exception e) {
+						log.warning("Error parsing XML: " + e.getMessage());
+						log.warning("Skipping invoice... ");
+					}
+					if (xml == null)
+						continue;
 					inv = invoiceParser.getInvoiceFromXml(xml);
 					if (inv.getErrorMsg().isBlank()) {
 						try {
@@ -156,12 +164,11 @@ public class FromCredemProcess extends SvrProcess {
 					} else {
 						M_PendingInvoices pendingInvoice = new M_PendingInvoices(Env.getCtx(), 0, null);
 						pendingInvoice.setName("Fattura: " + entry.getName());
-						pendingInvoice
-								.setDescription(inv.getErrorMsg());
+						pendingInvoice.setDescription(inv.getErrorMsg());
 						pendingInvoice.saveEx();
-						MAttachment allegato = new MAttachment(Env.getCtx(),M_PendingInvoices.Table_ID,
-								pendingInvoice.get_ID(),pendingInvoice.get_UUID(),null);
-						MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(),xml);
+						MAttachment allegato = new MAttachment(Env.getCtx(), M_PendingInvoices.Table_ID,
+								pendingInvoice.get_ID(), pendingInvoice.get_UUID(), null);
+						MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(), xml);
 						allegato.addEntry(entryAllegato);
 						allegato.setRecord_ID(pendingInvoice.get_ID());
 						allegato.save();

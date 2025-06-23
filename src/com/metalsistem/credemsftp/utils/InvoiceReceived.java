@@ -1,5 +1,6 @@
 package com.metalsistem.credemsftp.utils;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -18,6 +19,7 @@ public class InvoiceReceived extends MInvoice {
 	private List<MInvoicePaySchedule> scheduledPayments = new ArrayList<MInvoicePaySchedule>();
 	private List<MInvoiceLine> invoiceLines = new ArrayList<MInvoiceLine>();
 	private List<MLCOInvoiceWithholding> withHoldings = new ArrayList<MLCOInvoiceWithholding>();
+	private BigDecimal grandTotalXML = BigDecimal.ZERO;
 	private String errorMsg = "";
 
 	public InvoiceReceived(Properties properties, int i, String copy) {
@@ -67,6 +69,14 @@ public class InvoiceReceived extends MInvoice {
 
 	public void setErrorMsg(String errorMsg) {
 		this.errorMsg = errorMsg;
+	}
+
+	public BigDecimal getGrandTotalXML() {
+		return grandTotalXML;
+	}
+
+	public void setGrandTotalXML(BigDecimal grandTotalXML) {
+		this.grandTotalXML = grandTotalXML;
 	}
 
 }

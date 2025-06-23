@@ -1,5 +1,6 @@
 package com.metalsistem.credemsftp.utils;
 
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -12,6 +13,7 @@ import org.compiere.model.MInvoice;
 import org.compiere.model.MInvoiceLine;
 import org.compiere.model.MInvoicePaySchedule;
 import org.compiere.model.MProcess;
+import org.compiere.model.MProduct;
 import org.compiere.model.MRole;
 import org.compiere.model.MWindow;
 import org.compiere.model.Query;
@@ -75,6 +77,10 @@ public class InvoiceService {
 	}
 
 	public InvoiceReceived saveInvoice(InvoiceReceived inv) throws Exception {
+		/*
+		 * NOTA: Controllo già eseguito in fase di parsing, a questo punto del codice la
+		 * fattura dovrebbe essere sempre nuova. Ma non si sa mai...
+		 */
 		MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
 				"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?", null).setClient_ID()
 				.setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced())
@@ -87,7 +93,9 @@ public class InvoiceService {
 						.append(wh.getC_Tax().getRate())
 						.append("%: ")
 						.append(wh.getTaxAmt())
-						.append(" EUR \n");
+						.append(" ")
+						.append(inv.getCurrencyISO())
+						.append(" \n");
 
 			}
 			nota.append(notaRitenute.toString());
@@ -118,6 +126,7 @@ public class InvoiceService {
 //				}
 			}
 //			nota.append(notaDescrizione.toString());
+			checkTotal(inv);
 			log.info("Linee Fattura importate");
 
 			inv.set_ValueOfColumn("Note", nota.toString());
@@ -141,7 +150,45 @@ public class InvoiceService {
 			inv = new InvoiceReceived(res);
 			log.warning("Fattura %s già importata".formatted(res.getDocumentNo()));
 		}
+
+		InvoiceParser.setIsNewBP(false);
 		return inv;
+	}
+
+	private void checkTotal(InvoiceReceived inv) {
+		MInvoice invDb = new MInvoice(Env.getCtx(), inv.get_ID(), null);
+
+		BigDecimal xml = inv.getGrandTotalXML();
+		BigDecimal saved = invDb.getGrandTotal();
+
+		BigDecimal diff = xml.subtract(saved).abs();
+
+		if (diff.compareTo(BigDecimal.ZERO) > 0) {
+			MBPartner mbp = new MBPartner(Env.getCtx(), inv.getC_BPartner_ID(), null);
+			MInvoiceLine ln = new MInvoiceLine(inv);
+			ln.setName("Arrotondamento totale");
+			ln.setDescription("Arrotondamento totale");
+			ln.setPrice(diff);
+			if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
+				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
+				ln.setProduct(prod);
+				int taxId = inv.getInvoiceLines()
+						.stream()
+						.filter(il -> il.getProduct().equals(prod))
+						.findFirst()
+						.get()
+						.getC_Tax_ID();
+				ln.setC_Tax_ID(taxId);
+			} else {
+				int taxId = inv.getTaxes(true)[0].get_ID();
+				ln.setC_Tax_ID(taxId);
+			}
+			ln.setQtyEntered(BigDecimal.ONE);
+			ln.setQtyInvoiced(BigDecimal.ONE);
+			ln.saveEx();
+			inv.saveEx();
+		}
+
 	}
 
 	private void publishNewBpMessage(MBPartner mbp) {
