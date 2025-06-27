@@ -10,6 +10,7 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 import javax.xml.parsers.DocumentBuilder;
@@ -64,6 +65,7 @@ import it.cnet.idempiere.LIT_E_Invoice.modelXML2.FatturaElettronicaBodyType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.FatturaElettronicaType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.IndirizzoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.ModalitaPagamentoType;
+import it.cnet.idempiere.LIT_E_Invoice.modelXML2.NaturaType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.TipoDocumentoType;
 import it.cnet.idempiere.LIT_E_Invoice.utilXML.ManageXML_new;
 import it.cnet.idempiere.VATJournalModel.MLITVATDocTypeSequence;
@@ -199,6 +201,9 @@ public class InvoiceParser {
 				invoice.setErrorMsg("Fattura già presente nel sistema");
 				return invoice;
 			}
+		} else {
+			// BUSINESS PARTNER
+			mbp = findOrCreateBPartner(fattura);
 		}
 
 		invoice.setIsSOTrx(false);
@@ -215,12 +220,10 @@ public class InvoiceParser {
 		invoice.setC_DocTypeTarget_ID(docType.get_ID());
 		invoice.set_ValueOfColumn("LIT_FEPA_DOCTYPE", datiGeneraliDocumento.getTipoDocumento().value());
 
-		// BUSINESS PARTNER
-		mbp = findOrCreateBPartner(fattura);
-
 		invoice.setC_PaymentTerm_ID(mbp.getPO_PaymentTerm_ID());
 		invoice.setPaymentRule(mbp.getPaymentRulePO());
 		invoice.setBPartner(mbp);
+		invoice.setC_BPartner_ID(mbp.get_ID());
 
 		// LOCATION
 		MBPartnerLocation mbpLocation = mbp.getPrimaryC_BPartner_Location();
@@ -260,7 +263,7 @@ public class InvoiceParser {
 			il.setPrice(linea.getPrezzoUnitario());
 			il.setLine(linea.getNumeroLinea() * 10); // iDempiere Standard
 			il.setDescription(linea.getDescrizione());
-			MTax invTax = getTax(registroIva, linea);
+			MTax invTax = getTax(registroIva, linea.getNatura(), linea.getAliquotaIVA(), linea.getPrezzoUnitario());
 			il.setC_Tax_ID(invTax.get_ID());
 
 			if (invTax.getRate().compareTo(BigDecimal.ZERO) > 0) {
@@ -317,18 +320,9 @@ public class InvoiceParser {
 				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
 				il.setProduct(prod);
 			}
-			MTax invTax = taxes.stream().filter(tax -> {
-				if (riepilogo.getNatura() != null
-						&& tax.get_ValueAsString("LIT_XMLInvoice_TaxType").startsWith(riepilogo.getNatura().value())) {
-					return true;
-				}
-				if (tax.getC_CountryGroupFrom() != null && registroIva != null) {
-					return tax.getRate().compareTo(riepilogo.getAliquotaIVA()) == 0 && tax.getSOPOType().equals("B")
-							&& tax.getC_CountryGroupFrom_ID() == registroIva.getC_CountryGroupFrom_ID();
-				} else {
-					return tax.getRate().compareTo(riepilogo.getAliquotaIVA()) == 0 && tax.getSOPOType().equals("B");
-				}
-			}).findFirst().get();
+
+			MTax invTax = getTax(registroIva, riepilogo.getNatura(), riepilogo.getAliquotaIVA(),
+					riepilogo.getArrotondamento());
 
 			il.setC_Tax_ID(invTax.get_ID());
 			linee.add(il);
@@ -353,18 +347,8 @@ public class InvoiceParser {
 				il.setProduct(prod);
 			}
 
-			MTax invTax = taxes.stream().filter(tax -> {
-				if (dato.getNatura() != null
-						&& tax.get_ValueAsString("LIT_XMLInvoice_TaxType").startsWith(dato.getNatura().value())) {
-					return true;
-				}
-				if (tax.getC_CountryGroupFrom() != null && registroIva != null) {
-					return tax.getRate().compareTo(dato.getAliquotaIVA()) == 0 && tax.getSOPOType().equals("B")
-							&& tax.getC_CountryGroupFrom_ID() == registroIva.getC_CountryGroupFrom_ID();
-				} else {
-					return tax.getRate().compareTo(dato.getAliquotaIVA()) == 0 && tax.getSOPOType().equals("B");
-				}
-			}).findFirst().get();
+			MTax invTax = getTax(registroIva, dato.getNatura(), dato.getAliquotaIVA(),
+					dato.getImportoContributoCassa());
 
 			il.setC_Tax_ID(invTax.get_ID());
 			linee.add(il);
@@ -502,25 +486,62 @@ public class InvoiceParser {
 		return acconti;
 	}
 
-	private MTax getTax(final MLITVATDocTypeSequence registroIva, DettaglioLineeType linea) {
-		MTax invTax = null;
-		// N3.5 = Lettera d'intento
-		if (linea.getNatura() != null && "N3.5".equals(linea.getNatura().value())) {
-			// Non imponibile Art 8 c.1
-			invTax = new Query(Env.getCtx(), MTax.Table_Name, "value = 'F.02'", null).setClient_ID().first();
-		} else if (linea.getPrezzoUnitario().compareTo(BigDecimal.ZERO) == 0) {
-			invTax = new Query(Env.getCtx(), MTax.Table_Name, "value = 'G.06'", null).setClient_ID().first();
-		} else {
-			invTax = taxes.stream().filter(tax -> {
-				if (tax.getC_CountryGroupFrom() != null && registroIva != null) {
-					return tax.getRate().compareTo(linea.getAliquotaIVA()) == 0 && tax.getSOPOType().equals("B")
-							&& tax.getC_CountryGroupFrom_ID() == registroIva.getC_CountryGroupFrom_ID();
-				} else {
-					return tax.getRate().compareTo(linea.getAliquotaIVA()) == 0 && tax.getSOPOType().equals("B");
-				}
-			}).findFirst().get();
+	private MTax getTax(final MLITVATDocTypeSequence registroIva, NaturaType natura, BigDecimal aliquota,
+			BigDecimal prezzo) {
+		Optional<MTax> res = null;
+		// Filtra in base alla natura
+		if (natura != null) {
+			res = taxes.stream()
+					.filter(tax -> tax.get_ValueAsString("LIT_XMLInvoice_TaxType").startsWith(natura.value())
+							&& tax.get_ValueAsBoolean("IsDisplayed")
+							&& tax.getC_TaxCategory().getName().contains("Reverse charge"))
+					.findFirst();
+			if (res.isPresent())
+				return res.get();
+
+			res = taxes.stream()
+					.filter(tax -> tax.get_ValueAsString("LIT_XMLInvoice_TaxType").startsWith(natura.value())
+							&& !tax.get_ValueAsBoolean("IsDisplayed")
+							&& tax.getC_TaxCategory().getName().contains("Reverse charge"))
+					.findFirst();
+			if (res.isPresent())
+				if (res.get().getParent_Tax_ID() > 0)
+					return new MTax(Env.getCtx(), res.get().getParent_Tax_ID(), null);
+
+			res = taxes.stream()
+					.filter(tax -> tax.get_ValueAsString("LIT_XMLInvoice_TaxType").startsWith(natura.value())
+							&& tax.get_ValueAsBoolean("IsDisplayed"))
+					.findFirst();
+			if (res.isPresent())
+				return res.get();
 		}
-		return invTax;
+		// Filtra in base ad Aliquota e Country from/to
+		res = taxes.stream().filter(tax -> {
+			if (tax.getC_CountryGroupFrom() != null && registroIva != null) {
+				return tax.getRate().compareTo(aliquota) == 0 && tax.getSOPOType().equals("B")
+						&& tax.getC_CountryGroupFrom_ID() == registroIva.getC_CountryGroupFrom_ID();
+			}
+			return false;
+		}).findFirst();
+		if (res.isPresent())
+			return res.get();
+
+		// Default per prezzo = 0
+		res = taxes.stream()
+				.filter(tax -> prezzo.compareTo(BigDecimal.ZERO) == 0
+						&& tax.get_ValueAsString("Value").startsWith("G.06"))
+				.findFirst();
+		if (res.isPresent())
+			return res.get();
+
+		res = taxes.stream()
+				.filter(tax -> tax.getRate().compareTo(aliquota) == 0 && tax.getSOPOType().equals("B"))
+				.findFirst();
+		if (res.isPresent())
+			return res.get();
+
+		return new Query(Env.getCtx(), MTax.Table_Name, "value = 'G.06'", null).setClient_ID().first();
+
 	}
 
 	private MBPartner createAndSaveBusinessPartner(FatturaElettronicaType fattura, String piva) {

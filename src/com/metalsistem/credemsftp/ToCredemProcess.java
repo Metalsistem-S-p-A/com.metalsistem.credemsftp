@@ -126,7 +126,10 @@ public class ToCredemProcess extends SvrProcess {
 
 			// CSV
 			List<MInvoice> poInvoices = new Query(getCtx(), MInvoice.Table_Name,
-					"isSoTrx='N' AND DocStatus = 'CO' AND isActive='Y'", null).setClient_ID().list();
+					"isSoTrx='N' AND DocStatus = 'CO' AND isActive='Y' AND DateAcct < CURRENT_DATE - 1"
+					+ " and c_invoice_id in (select c_invoice_id from lit_einvoice le where le.lit_mssynccredem = 'N')", null)
+					.setClient_ID()
+					.list();
 
 			String dataOra = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
 
@@ -152,11 +155,9 @@ public class ToCredemProcess extends SvrProcess {
 
 			}
 			einvs.sort((me1, me2) -> {
-				String protocollo1 = me1.get_ValueAsString("VATDocumentNo");
-				String protocollo2 = me2.get_ValueAsString("VATDocumentNo");
-				Integer numProtocollo1 = Integer.parseInt(protocollo1.split("/")[0]);
-				Integer numProtocollo2 = Integer.parseInt(protocollo2.split("/")[0]);
-				return numProtocollo1.compareTo(numProtocollo2);
+				String protocollo1 = me1.get_ValueAsString("VATDocumentNo").split("/")[0];
+				String protocollo2 = me2.get_ValueAsString("VATDocumentNo").split("/")[0];
+				return protocollo1.compareTo(protocollo2);
 			});
 
 			for (MInvoice inv : einvs) {

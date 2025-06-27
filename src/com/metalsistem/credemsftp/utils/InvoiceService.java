@@ -160,7 +160,6 @@ public class InvoiceService {
 
 		BigDecimal xml = inv.getGrandTotalXML();
 		BigDecimal saved = invDb.getGrandTotal();
-
 		BigDecimal diff = xml.subtract(saved).abs();
 
 		if (diff.compareTo(BigDecimal.ZERO) > 0) {
