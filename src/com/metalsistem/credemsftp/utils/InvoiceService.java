@@ -160,9 +160,9 @@ public class InvoiceService {
 
 		BigDecimal xml = inv.getGrandTotalXML();
 		BigDecimal saved = invDb.getGrandTotal();
-		BigDecimal diff = xml.subtract(saved).abs();
+		BigDecimal diff = xml.subtract(saved);
 
-		if (diff.compareTo(BigDecimal.ZERO) > 0) {
+		if (diff.compareTo(BigDecimal.ZERO) != 0) {
 			MBPartner mbp = new MBPartner(Env.getCtx(), inv.getC_BPartner_ID(), null);
 			MInvoiceLine ln = new MInvoiceLine(inv);
 			ln.setName("Arrotondamento totale");

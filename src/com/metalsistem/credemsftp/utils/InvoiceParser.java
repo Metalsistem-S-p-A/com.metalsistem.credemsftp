@@ -86,11 +86,11 @@ public class InvoiceParser {
 
 	public InvoiceParser() {
 		taxes = loadApplicableTaxes();
-		uoms = new Query(Env.getCtx(), MUOM.Table_Name, "", null).setClient_ID().list();
+		uoms = new Query(Env.getCtx(), MUOM.Table_Name, "IsActive = 'Y'", null).setClient_ID().list();
 	}
 
 	private List<MTax> loadApplicableTaxes() {
-		return new Query(Env.getCtx(), MTax.Table_Name, "to_country_id = 214", null).setClient_ID().list();
+		return new Query(Env.getCtx(), MTax.Table_Name, "IsActive = 'Y", null).setClient_ID().list();
 	}
 
 	public byte[] getXml(RemoteResourceInfo entry, SFTPClient sftp) throws Exception {
@@ -391,7 +391,7 @@ public class InvoiceParser {
 		List<MInvoicePaySchedule> scadenze = new ArrayList<>();
 		for (DatiPagamentoType pagamento : body.getDatiPagamento()) {
 			for (DettaglioPagamentoType dettaglio : pagamento.getDettaglioPagamento()) {
-				createBPBankAccount(mbp, dettaglio, mbpas);
+				MBPBankAccount mbpa = createBPBankAccount(mbp, dettaglio, mbpas);
 				MInvoicePaySchedule ips = new MInvoicePaySchedule(Env.getCtx(), 0, null);
 				ips.setC_Invoice_ID(invoice.get_ID());
 				ips.setParent(invoice);
@@ -420,6 +420,7 @@ public class InvoiceParser {
 
 				ModalitaPagamentoType dpt = dettaglio.getModalitaPagamento();
 				ips.set_ValueOfColumn("PaymentRule", parsePaymentRule(dpt.value()));
+				ips.set_ValueOfColumn("C_BP_BankAccount_ID", mbpa.get_ID());
 				scadenze.add(ips);
 			}
 		}
@@ -540,7 +541,7 @@ public class InvoiceParser {
 		if (res.isPresent())
 			return res.get();
 
-		return new Query(Env.getCtx(), MTax.Table_Name, "value = 'G.06'", null).setClient_ID().first();
+		return new MTax(Env.getCtx(),0,null);
 
 	}
 
@@ -620,34 +621,68 @@ public class InvoiceParser {
 		return mbpLocation;
 	}
 
-	private void createBPBankAccount(MBPartner mbp, DettaglioPagamentoType dettaglio, List<MBPBankAccount> mbpas) {
+	private MBPBankAccount createBPBankAccount(MBPartner mbp, DettaglioPagamentoType dettaglio,
+			List<MBPBankAccount> mbpas) {
 		try {
-			if (dettaglio.getIBAN() != null) {
-				MBPBankAccount mbpa = mbpas.stream()
-						.filter(bpa -> dettaglio.getIBAN().equals(bpa.getIBAN()))
-						.findFirst()
-						.orElse(null);
-				if (mbpa == null) {
-					mbpa = new MBPBankAccount(Env.getCtx(), 0, null);
-					mbpa.setC_BPartner_ID(mbp.get_ID());
-					mbpa.setIsActive(true);
-					mbpa.setIsACH(true);
-					mbpa.setIBAN(dettaglio.getIBAN());
-					if (dettaglio.getABI() != null && dettaglio.getCAB() != null) {
-						MBank bank = new Query(Env.getCtx(), MBank.Table_Name, "RoutingNo = ? AND isActive = 'Y'", null)
-								.setClient_ID()
-								.setParameters(dettaglio.getABI() + dettaglio.getCAB())
-								.first();
-						if (bank != null)
-							mbpa.setC_Bank_ID(bank.get_ID());
-					}
-					mbpa.saveEx();
-				}
+			// No IBAN = No BankAccount
+			if (dettaglio.getIBAN() == null)
+				return null;
+
+			String iban = dettaglio.getIBAN();
+			MBPBankAccount mbpa = mbpas.stream()
+					.filter(bpa -> dettaglio.getIBAN().equals(bpa.getIBAN()))
+					.findFirst()
+					.orElse(null);
+
+			if (mbpa != null) {
+				return mbpa;
 			}
+
+			mbpa = new MBPBankAccount(Env.getCtx(), 0, null);
+			mbpa.setC_BPartner_ID(mbp.get_ID());
+			mbpa.setIsActive(true);
+			mbpa.setIsACH(true);
+			mbpa.setIBAN(dettaglio.getIBAN());
+
+			String abi = dettaglio.getABI();
+			String cab = dettaglio.getCAB();
+			String routingNo;
+
+			if (abi != null && cab != null) {
+				routingNo = abi + cab;
+			} else {
+				routingNo = iban.substring(5, 10) + iban.substring(10, 15);
+			}
+
+			String bankName = dettaglio.getIstitutoFinanziario();
+			if (bankName != null)
+				mbpa.set_ValueOfColumn("BankNameBP", dettaglio.getIstitutoFinanziario());
+			else
+				bankName = "Banca - " + routingNo;
+
+			MBank bank = new Query(Env.getCtx(), MBank.Table_Name, "RoutingNo = ? AND isActive = 'Y'", null)
+					.setClient_ID()
+					.setParameters(routingNo)
+					.first();
+
+			if (bank == null) {
+				bank = new MBank(Env.getCtx(), 0, null);
+				bank.setName(bankName);
+				bank.setRoutingNo(routingNo);
+				if (dettaglio.getBIC() != null)
+					bank.setSwiftCode(dettaglio.getBIC());
+				bank.saveEx();
+			}
+
+			mbpa.setC_Bank_ID(bank.get_ID());
+			mbpa.saveEx();
+			return mbpa;
+
 		} catch (Exception e) {
 			log.warning("Impossibile creare Business Partner Bank Account");
 			log.warning(e.getMessage());
 		}
+		return null;
 	}
 
 	private boolean isBannedDocument(FatturaElettronicaBodyType body) {
