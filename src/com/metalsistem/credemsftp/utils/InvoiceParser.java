@@ -51,6 +51,7 @@ import org.xml.sax.InputSource;
 
 import com.itextpdf.io.source.ByteArrayOutputStream;
 import com.metalsistem.credemsftp.model.M_EsitoCredem;
+import com.metalsistem.credemsftp.model.M_MsEinvProduct;
 
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.AllegatiType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.DatiAnagraficiCedenteType;
@@ -90,7 +91,7 @@ public class InvoiceParser {
 	}
 
 	private List<MTax> loadApplicableTaxes() {
-		return new Query(Env.getCtx(), MTax.Table_Name, "IsActive = 'Y", null).setClient_ID().list();
+		return new Query(Env.getCtx(), MTax.Table_Name, "IsActive = 'Y'", null).setClient_ID().list();
 	}
 
 	public byte[] getXml(RemoteResourceInfo entry, SFTPClient sftp) throws Exception {
@@ -269,10 +270,12 @@ public class InvoiceParser {
 			if (invTax.getRate().compareTo(BigDecimal.ZERO) > 0) {
 				imponibile = imponibile.add(linea.getPrezzoUnitario());
 			}
-			if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
-				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
-				il.setProduct(prod);
-			}
+
+			il.setProduct(getProductByTax(invTax, mbp, "Std"));
+//			if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
+//				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
+//				il.setProduct(prod);
+//			}
 			if (linea.getPrezzoUnitario().compareTo(BigDecimal.ZERO) == 0) {
 				il.setIsDescription(true);
 				il.setProduct(null);
@@ -316,14 +319,11 @@ public class InvoiceParser {
 			il.setDescription("Arrotondamento");
 			il.setQtyEntered(BigDecimal.ONE);
 			il.setQtyInvoiced(BigDecimal.ONE);
-			if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
-				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
-				il.setProduct(prod);
-			}
 
 			MTax invTax = getTax(registroIva, riepilogo.getNatura(), riepilogo.getAliquotaIVA(),
 					riepilogo.getArrotondamento());
 
+			il.setProduct(getProductByTax(invTax, mbp, "Std"));
 			il.setC_Tax_ID(invTax.get_ID());
 			linee.add(il);
 		}
@@ -341,14 +341,10 @@ public class InvoiceParser {
 			il.setPrice(dato.getImportoContributoCassa());
 			il.setName("Contributo previdenziale " + dato.getTipoCassa().value() + " " + dato.getAlCassa());
 			il.setDescription("Contributo previdenziale " + dato.getTipoCassa().value() + " " + dato.getAlCassa());
-
-			if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
-				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
-				il.setProduct(prod);
-			}
-
 			MTax invTax = getTax(registroIva, dato.getNatura(), dato.getAliquotaIVA(),
 					dato.getImportoContributoCassa());
+
+			il.setProduct(getProductByTax(invTax, mbp, "Cp"));
 
 			il.setC_Tax_ID(invTax.get_ID());
 			linee.add(il);
@@ -364,7 +360,7 @@ public class InvoiceParser {
 		List<DatiRitenutaType> datiRitenuta = body.getDatiGenerali().getDatiGeneraliDocumento().getDatiRitenuta();
 		List<MLCOInvoiceWithholding> ritenute = parseDatiRitenuta(imponibile, datiRitenuta);
 		invoice.setWithHoldings(ritenute);
-
+		
 		BigDecimal totaleDocumento = datiGeneraliDocumento.getImportoTotaleDocumento();
 //		for (MLCOInvoiceWithholding rit : ritenute) {
 //			totaleDocumento = totaleDocumento.subtract(rit.getTaxAmt());
@@ -384,6 +380,24 @@ public class InvoiceParser {
 		invoice.setAD_User_ID(0);
 
 		return invoice;
+	}
+
+	private MProduct getProductByTax(MTax invTax, MBPartner mbp, String type) {
+		int einv_product_id = new Query(Env.getCtx(), M_MsEinvProduct.Table_Name,
+				"IsActive = 'Y' AND C_Tax_ID = ? AND LIT_MsEinvProdType = ? AND C_BPartner_ID = ?", null)
+				.setParameters(invTax.get_ID(), type, mbp.get_ID())
+				.setClient_ID()
+				.firstId();
+
+		if (einv_product_id > 0) {
+			M_MsEinvProduct einv_product = new M_MsEinvProduct(Env.getCtx(), einv_product_id, null);
+			return new MProduct(Env.getCtx(), einv_product.getM_Product_ID(), null);
+		} else {
+			if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
+				return new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
+			}
+		}
+		return null;
 	}
 
 	private List<MInvoicePaySchedule> parseDatiPagamento(InvoiceReceived invoice, FatturaElettronicaBodyType body,
@@ -482,6 +496,7 @@ public class InvoiceParser {
 			acconto.setC_Tax_ID(imposta.get_ID());
 			acconto.setTaxBaseAmt(imponibile);
 			acconto.setTaxAmt(ritenuta.getImportoRitenuta());
+			
 			acconti.add(acconto);
 		}
 		return acconti;
@@ -541,7 +556,7 @@ public class InvoiceParser {
 		if (res.isPresent())
 			return res.get();
 
-		return new MTax(Env.getCtx(),0,null);
+		return new MTax(Env.getCtx(), 0, null);
 
 	}
 

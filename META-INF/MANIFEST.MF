@@ -11,7 +11,7 @@ Require-Bundle: org.adempiere.base;bundle-version="11.0.0",
 Bundle-Vendor: METALSISTEM
 Automatic-Module-Name: com.metalsistem.credemsftp
 Bundle-ActivationPolicy: lazy
-Bundle-Activator: org.adempiere.plugin.utils.AdempiereActivator
+Bundle-Activator: org.adempiere.plugin.utils.Incremental2PackActivator
 Bundle-ClassPath: .,
  lib/jaxb-api.jar,
  lib/jaxb-impl.jar,
