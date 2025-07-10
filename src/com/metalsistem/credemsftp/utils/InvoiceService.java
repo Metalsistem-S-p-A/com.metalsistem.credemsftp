@@ -22,6 +22,8 @@ import org.compiere.util.Env;
 import org.globalqss.model.MLCOInvoiceWithholding;
 import org.idempiere.broadcast.BroadcastMsgUtil;
 
+import com.metalsistem.credemsftp.model.M_MsEinvProduct;
+
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
 
 public class InvoiceService {
@@ -155,6 +157,19 @@ public class InvoiceService {
 		return inv;
 	}
 
+	private M_MsEinvProduct getProductArrotondamento(MBPartner mbp, String type) {
+		int einv_product_id = new Query(Env.getCtx(), M_MsEinvProduct.Table_Name,
+				"IsActive = 'Y' AND LIT_MsEinvProdType = ? AND C_BPartner_ID = ?", null)
+				.setParameters(type, mbp.get_ID())
+				.setClient_ID()
+				.firstId();
+
+		if (einv_product_id > 0) {
+			return new M_MsEinvProduct(Env.getCtx(), einv_product_id, null);
+		}
+		return null;
+	}
+
 	private void checkTotal(InvoiceReceived inv) {
 		MInvoice invDb = new MInvoice(Env.getCtx(), inv.get_ID(), null);
 
@@ -168,7 +183,13 @@ public class InvoiceService {
 			ln.setName("Arrotondamento totale");
 			ln.setDescription("Arrotondamento totale");
 			ln.setPrice(diff);
-			if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
+
+			M_MsEinvProduct einv_prod = getProductArrotondamento(mbp, "ArrotondamentoIdempiere");
+			if (einv_prod != null) {
+				MProduct prod = new MProduct(Env.getCtx(), einv_prod.getM_Product_ID(), null);
+				ln.setProduct(prod);
+				ln.setC_Tax_ID(einv_prod.getC_Tax_ID());
+			} else if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
 				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
 				ln.setProduct(prod);
 				int taxId = inv.getInvoiceLines()
