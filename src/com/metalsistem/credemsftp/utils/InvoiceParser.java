@@ -402,7 +402,6 @@ public class InvoiceParser {
 						? new Timestamp(
 								dettaglio.getDataLimitePagamentoAnticipato().toGregorianCalendar().getTimeInMillis())
 						: scadenza;
-
 				ips.setDueDate(scadenza);
 				ips.setDiscountDate(scadenzaSconto);
 				// In caso non ci siano le date, queste vengono generate
@@ -414,7 +413,8 @@ public class InvoiceParser {
 
 				ModalitaPagamentoType dpt = dettaglio.getModalitaPagamento();
 				ips.set_ValueOfColumn("PaymentRule", parsePaymentRule(dpt.value()));
-				ips.set_ValueOfColumn("C_BP_BankAccount_ID", mbpa.get_ID());
+				if (mbpa != null)
+					ips.set_ValueOfColumn("C_BP_BankAccount_ID", mbpa.get_ID());
 				scadenze.add(ips);
 			}
 		}
@@ -842,7 +842,7 @@ public class InvoiceParser {
 		try {
 			// No IBAN = No BankAccount
 			if (dettaglio.getIBAN() == null)
-				return null;
+				return mbp.getBankAccounts(true)[0];
 
 			String iban = dettaglio.getIBAN();
 			MBPBankAccount mbpa = mbpas.stream()

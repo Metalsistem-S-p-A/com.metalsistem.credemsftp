@@ -156,24 +156,16 @@ public class FromCredemProcess extends SvrProcess {
 							if (inv.get_ID() > 0) {
 								importedInvoices++;
 								invoiceService.archiveEInvoice(xml, inv);
+								sftp.rm(entry.getPath());
 							}
 						} catch (Exception e) {
 							log.warning("Fattura non importata, errore durante il salvataggio");
 							e.printStackTrace();
+							backupXml(entry, inv, xml, e.getMessage());
 						}
 					} else {
-						M_PendingInvoices pendingInvoice = new M_PendingInvoices(Env.getCtx(), 0, null);
-						pendingInvoice.setName("Fattura: " + entry.getName());
-						pendingInvoice.setDescription(inv.getErrorMsg());
-						pendingInvoice.saveEx();
-						MAttachment allegato = new MAttachment(Env.getCtx(), M_PendingInvoices.Table_ID,
-								pendingInvoice.get_ID(), pendingInvoice.get_UUID(), null);
-						MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(), xml);
-						allegato.addEntry(entryAllegato);
-						allegato.setRecord_ID(pendingInvoice.get_ID());
-						allegato.save();
+						backupXml(entry, inv, xml, inv.getErrorMsg());
 					}
-					sftp.rm(entry.getPath());
 				} else if (parts[0].length() >= 16 && credemId.contains(parts[0].substring(10, 15))) {
 					// ELABORO ESITO
 					byte[] xml = invoiceParser.getXml(entry, sftp);
@@ -206,5 +198,18 @@ public class FromCredemProcess extends SvrProcess {
 			return Utils.getMessage("LIT_MsInfoImportInvResult", importedInvoices,
 					(existingInvoices - importedInvoices));
 		}
+	}
+
+	private void backupXml(RemoteResourceInfo entry, InvoiceReceived inv, byte[] xml, String err) {
+		M_PendingInvoices pendingInvoice = new M_PendingInvoices(Env.getCtx(), 0, null);
+		pendingInvoice.setName("Fattura: " + entry.getName());
+		pendingInvoice.setDescription(err);
+		pendingInvoice.saveEx();
+		MAttachment allegato = new MAttachment(Env.getCtx(), M_PendingInvoices.Table_ID, pendingInvoice.get_ID(),
+				pendingInvoice.get_UUID(), null);
+		MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(), xml);
+		allegato.addEntry(entryAllegato);
+		allegato.setRecord_ID(pendingInvoice.get_ID());
+		allegato.save();
 	}
 }
