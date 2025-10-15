@@ -76,6 +76,13 @@ import net.schmizz.sshj.sftp.RemoteResourceInfo;
 import net.schmizz.sshj.sftp.SFTPClient;
 
 public class InvoiceParser {
+	private static final String LIT_IS_DEFAULT_TAX = "LIT_IsDefaultTax";
+	private static final String IS_DISPLAYED = "IsDisplayed";
+	private static final String LIT_XML_INVOICE_TAX_TYPE = "LIT_XMLInvoice_TaxType";
+	private static final String NATURA_LETTERA_INTENTO = "N3.5";
+	private static final String LIT_XML_PRODUCT = "LIT_M_Product_XML_ID";
+	private static final String LIT_CHECK_PAYMENT_TERM = "LIT_isNoCheckPaymentTerm";
+	private static final String DEFAULT_PAYMENT_RULE = "MP05";
 	private static final CLogger log = CLogger.getCLogger(InvoiceParser.class);
 
 	private MBPartner bp = null;
@@ -95,6 +102,20 @@ public class InvoiceParser {
 		taxes = loadApplicableTaxes();
 		uoms = new Query(Env.getCtx(), MUOM.Table_Name, "IsActive = 'Y'", null).setClient_ID().list();
 	}
+
+	public byte[] parseByteXML(byte[] xml) {
+		try {
+			byte[] parsed;
+			CMSSignedData signature = new CMSSignedData(xml);
+			CMSProcessable sc = signature.getSignedContent();
+			parsed = (byte[]) sc.getContent();
+			return removeBOMIfPresent(parsed);
+		} catch (Exception e) {
+			log.warning("Fattura non p7m");
+		}
+		return removeBOMIfPresent(xml);
+	}
+
 
 	private InvoiceReceived getInvoice(FatturaElettronicaType fattura) throws Exception {
 		// TODO: Gestire caso di molteplici body(?)
@@ -148,6 +169,7 @@ public class InvoiceParser {
 		invoice.setC_DocTypeTarget_ID(docType.get_ID());
 		invoice.set_ValueOfColumn("LIT_FEPA_DOCTYPE", datiGeneraliDocumento.getTipoDocumento().value());
 
+		// TERMINI E MODALITA' PAGAMENTO TESTATA
 		invoice.setC_PaymentTerm_ID(mbp.getPO_PaymentTerm_ID());
 		invoice.setPaymentRule(mbp.getPaymentRulePO());
 		invoice.setBPartner(mbp);
@@ -171,7 +193,7 @@ public class InvoiceParser {
 
 		// LETTERA D'INTENTO
 		if (body.getDatiBeniServizi().getDatiRiepilogo().get(0).getNatura() != null
-				&& "N3.5".equals(body.getDatiBeniServizi().getDatiRiepilogo().get(0).getNatura().value())) {
+				&& NATURA_LETTERA_INTENTO.equals(body.getDatiBeniServizi().getDatiRiepilogo().get(0).getNatura().value())) {
 
 			MBPLetterIntent letter = new Query(Env.getCtx(), MBPLetterIntent.Table_Name,
 					" isSOTrx = 'N' " + "AND bp_letterintentdatevalidfrom < Current_date "
@@ -223,10 +245,10 @@ public class InvoiceParser {
 					if (linea.getUnitaMisura().toLowerCase().equals(uom.getUOMSymbol().toLowerCase())
 							|| linea.getUnitaMisura()
 									.toLowerCase()
-									.equals(uom.get_Translation("Name", "it_IT").toLowerCase())
+									.equals(uom.get_Translation(MUOM.COLUMNNAME_Name, "it_IT").toLowerCase())
 							|| linea.getUnitaMisura()
 									.toLowerCase()
-									.equals(uom.get_Translation("UOMSymbol", "it_IT").toLowerCase())) {
+									.equals(uom.get_Translation(MUOM.COLUMNNAME_UOMSymbol, "it_IT").toLowerCase())) {
 						il.setC_UOM_ID(uom.get_ID());
 						break;
 					}
@@ -416,10 +438,21 @@ public class InvoiceParser {
 				if (mbpa != null)
 					ips.set_ValueOfColumn("C_BP_BankAccount_ID", mbpa.get_ID());
 				scadenze.add(ips);
+				
+				if(body.getDatiPagamento().indexOf(pagamento) == 0 && pagamento.getDettaglioPagamento().indexOf(dettaglio) == 0 && isNewBP) {
+					mbp.setPaymentRule(parsePaymentRule(dpt.value()));
+					mbp.saveEx();
+				}
+				
 			}
 		}
 		String checkPayment = scadenze.size() > 0 ? "Y" : "N";
 		invoice.set_ValueOfColumn("LIT_isNoCheckPaymentTerm", checkPayment);
+		if (scadenze.size() > 0) {
+			invoice.set_ValueOfColumn(LIT_CHECK_PAYMENT_TERM, "Y");
+		} else {
+			invoice.set_ValueOfColumn(LIT_CHECK_PAYMENT_TERM, "N");
+		}
 		return scadenze;
 	}
 
@@ -497,8 +530,8 @@ public class InvoiceParser {
 			M_MsEinvProduct einv_product = new M_MsEinvProduct(Env.getCtx(), einv_product_id, null);
 			return new MProduct(Env.getCtx(), einv_product.getM_Product_ID(), null);
 		} else {
-			if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
-				return new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
+			if (mbp.get_ValueAsInt(LIT_XML_PRODUCT) > 0) {
+				return new MProduct(Env.getCtx(), mbp.get_ValueAsInt(LIT_XML_PRODUCT), null);
 			}
 		}
 		return null;
@@ -663,28 +696,45 @@ public class InvoiceParser {
 		// Filtra in base alla natura
 		if (natura != null) {
 			res = taxes.stream()
-					.filter(tax -> tax.get_ValueAsString("LIT_XMLInvoice_TaxType").startsWith(natura.value())
-							&& tax.get_ValueAsBoolean("IsDisplayed")
+					.filter(tax -> tax.get_ValueAsString(LIT_XML_INVOICE_TAX_TYPE).startsWith(natura.value())
+							&& tax.get_ValueAsBoolean(IS_DISPLAYED) && tax.get_ValueAsBoolean(LIT_IS_DEFAULT_TAX))
+					.findFirst();
+			if (res.isPresent())
+				return res.get();
+
+			res = taxes.stream()
+					.filter(tax -> tax.get_ValueAsString(LIT_XML_INVOICE_TAX_TYPE).startsWith(natura.value())
+							&& tax.get_ValueAsBoolean(IS_DISPLAYED) && tax.get_ValueAsBoolean(LIT_IS_DEFAULT_TAX)
 							&& tax.getC_TaxCategory().getName().contains("Reverse charge"))
 					.findFirst();
 			if (res.isPresent())
 				return res.get();
 
 			res = taxes.stream()
-					.filter(tax -> tax.get_ValueAsString("LIT_XMLInvoice_TaxType").startsWith(natura.value())
-							&& !tax.get_ValueAsBoolean("IsDisplayed")
+					.filter(tax -> tax.get_ValueAsString(LIT_XML_INVOICE_TAX_TYPE).startsWith(natura.value())
+							&& !tax.get_ValueAsBoolean(IS_DISPLAYED)
 							&& tax.getC_TaxCategory().getName().contains("Reverse charge"))
 					.findFirst();
 			if (res.isPresent())
-				if (res.get().getParent_Tax_ID() > 0)
+				if (res.get().getParent_Tax_ID() > 0 && !res.get().get_ValueAsBoolean(LIT_IS_DEFAULT_TAX))
 					return new MTax(Env.getCtx(), res.get().getParent_Tax_ID(), null);
+				else if (res.get().get_ValueAsBoolean(LIT_IS_DEFAULT_TAX))
+					return new MTax(Env.getCtx(), res.get().get_ID(), null);
 
 			res = taxes.stream()
-					.filter(tax -> tax.get_ValueAsString("LIT_XMLInvoice_TaxType").startsWith(natura.value())
-							&& tax.get_ValueAsBoolean("IsDisplayed"))
+					.filter(tax -> tax.get_ValueAsString(LIT_XML_INVOICE_TAX_TYPE).startsWith(natura.value())
+							&& tax.get_ValueAsBoolean(LIT_IS_DEFAULT_TAX) && tax.get_ValueAsBoolean(IS_DISPLAYED))
 					.findFirst();
+
+			Optional<MTax> alt = taxes.stream()
+					.filter(tax -> tax.get_ValueAsString(LIT_XML_INVOICE_TAX_TYPE).startsWith(natura.value())
+							&& tax.get_ValueAsBoolean(IS_DISPLAYED))
+					.findFirst();
+
 			if (res.isPresent())
 				return res.get();
+			else if (alt.isPresent())
+				return alt.get();
 		}
 		// Filtra in base ad Aliquota e Country from/to
 		res = taxes.stream().filter(tax -> {
@@ -748,7 +798,7 @@ public class InvoiceParser {
 		Integer paymentTermId = new Query(Env.getCtx(), MPaymentTerm.Table_Name, "isdefault = 'Y' and isactive='Y'",
 				null).setClient_ID().firstId();
 		mbp.setPO_PaymentTerm_ID(paymentTermId);
-		mbp.setPaymentRulePO(parsePaymentRule("MP05"));
+		mbp.setPaymentRulePO(parsePaymentRule(DEFAULT_PAYMENT_RULE));
 //		if (mbp.getPO_PaymentTerm_ID() < 1) {
 //			Integer paymentTermId = new Query(Env.getCtx(), MPaymentTerm.Table_Name, "isdefault = 'Y' and isactive='Y'",
 //					null).setClient_ID().firstId();
@@ -990,7 +1040,7 @@ public class InvoiceParser {
 		case "MP02":
 			modalitàPagamento = "Check";
 			break;
-		case "MP05":
+		case DEFAULT_PAYMENT_RULE:
 			modalitàPagamento = "Direct Deposit";
 			break;
 		case "MP08":

@@ -132,7 +132,7 @@ public class ToCredemProcess extends SvrProcess {
 					.list();
 
 			String dataOra = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-
+			
 			StringWriter sw = new StringWriter();
 			CSVFormat csvFormat = CSVFormat.DEFAULT.builder().setDelimiter(';').build();
 			CSVPrinter csvPrinter = new CSVPrinter(sw, csvFormat);

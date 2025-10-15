@@ -83,7 +83,6 @@ public class FromCredemProcess extends SvrProcess {
 	private Integer existingInvoices = 0;
 	private Integer port;
 
-//	private IArchiveStore storage;
 
 	@Override
 	protected void prepare() {
