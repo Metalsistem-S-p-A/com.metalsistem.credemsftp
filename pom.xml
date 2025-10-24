@@ -17,41 +17,41 @@
 			<id>InvoiceP2</id>
 			<layout>p2</layout>
 			<url>
-				file:///opt/repos/idempiere-base/it.cnet.impl.LIT_E_Invoice/target/</url>
+				file:///opt/repos/idempierebase/it.cnet.impl.LIT_E_Invoice/target/</url>
 		</repository>
 		<repository>
 			<id>LetterIntentP2</id>
 			<layout>p2</layout>
 			<url>
-				file:///opt/repos/idempiere-base/it.cnet.impl.letterintent/target/</url>
+				file:///opt/repos/idempierebase/it.cnet.impl.letterintent/target/</url>
 		</repository>
 		<repository>
 			<id>VATJounralP2</id>
 			<layout>p2</layout>
 			<url>
-				file:///opt/repos/idempiere-base/it.cnet.impl.LIT_VATJournal/target/</url>
+				file:///opt/repos/idempierebase/it.cnet.impl.LIT_VATJournal/target/</url>
 		</repository>
 		<repository>
 			<id>coreLib1P2</id>
 			<layout>p2</layout>
-			<url>file:///opt/repos/idempiere-base/it.idIta.impl.coreLib1/target</url>
+			<url>file:///opt/repos/idempierebase/it.idIta.impl.coreLib1/target</url>
 		</repository>
 		<repository>
 			<id>coreLib2P2</id>
 			<layout>p2</layout>
-			<url>file:///opt/repos/idempiere-base/it.idIta.impl.coreLib2/target</url>
+			<url>file:///opt/repos/idempierebase/it.idIta.impl.coreLib2/target</url>
 		</repository>
 		<repository>
 			<id>withholdingP2</id>
 			<layout>p2</layout>
 			<url>
-				file:///opt/repos/idempiere-base/org.globalqss.idempiere.LCO.withholdings/target</url>
+				file:///opt/repos/idempierebase/org.globalqss.idempiere.LCO.withholdings/target</url>
 		</repository>
 		<repository>
 			<id>paymentTermP2</id>
 			<layout>p2</layout>
 			<url>
-				file:///opt/repos/idempiere-base/it.cnet.impl.payment_term/target/</url>
+				file:///opt/repos/idempierebase/it.cnet.impl.payment_term/target/</url>
 		</repository>
 	</repositories>
 	<dependencies>
