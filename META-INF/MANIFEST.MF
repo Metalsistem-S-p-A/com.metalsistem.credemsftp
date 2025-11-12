@@ -41,6 +41,7 @@ Bundle-ClassPath: .,
 Bundle-RequiredExecutionEnvironment: JavaSE-17
 Import-Package: it.cnet.idempiere.LIT_E_Invoice.model,
  it.cnet.idempiere.LIT_E_Invoice.modelXML2,
+ it.cnet.idempiere.LIT_E_Invoice.process,
  it.cnet.idempiere.LIT_E_Invoice.utilXML,
  it.cnet.idempiere.lettIntent.model,
  org.globalqss.model

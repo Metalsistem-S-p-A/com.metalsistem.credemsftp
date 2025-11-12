@@ -33,10 +33,12 @@ import org.compiere.model.MInvoice;
 import org.compiere.model.Query;
 import org.compiere.process.ProcessInfoParameter;
 import org.compiere.process.SvrProcess;
+import org.compiere.util.Env;
 
 import com.metalsistem.credemsftp.utils.SftpFile;
 
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
+import it.cnet.idempiere.LIT_E_Invoice.process.FEPAOperations;
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.sftp.SFTPClient;
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
@@ -132,7 +134,7 @@ public class ToCredemProcess extends SvrProcess {
 					.list();
 
 			String dataOra = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-			
+
 			StringWriter sw = new StringWriter();
 			CSVFormat csvFormat = CSVFormat.DEFAULT.builder().setDelimiter(';').build();
 			CSVPrinter csvPrinter = new CSVPrinter(sw, csvFormat);
@@ -176,10 +178,38 @@ public class ToCredemProcess extends SvrProcess {
 			if (count > 0 && path != null) {
 				sftp.put(new SftpFile(csvName, sw.toString().getBytes()), path + csvName);
 			}
+			
+			// Generate XML
+
+			List<MInvoice> soInvoices = new Query(getCtx(), MInvoice.Table_Name,
+					"C_Invoice.IsSOTrx='Y' "
+					+ "AND C_Invoice.DocStatus IN ('CO','CL') "
+					+ "AND C_Invoice.DateInvoiced>='2019-01-01' "
+					+ "AND dt.LIT_FEPA_DOCTYPE IS NOT NULL "
+					+ "AND le.C_Invoice_ID IS NULL "
+					+ "AND C.LIT_FEPA_IPA IS NOT NULL "
+					+ "AND C_Invoice.AD_Org_ID = ? ", null)
+					.setParameters(Env.getAD_Org_ID(getCtx()))
+					.addJoinClause("LEFT JOIN C_DocType dt ON dt.C_DocType_ID=C_Invoice.C_DocTypeTarget_ID")
+					.addJoinClause("LEFT JOIN LIT_EInvoice le ON le.C_Invoice_ID=C_Invoice.C_Invoice_ID")
+					.addJoinClause("LEFT JOIN C_BPartner c ON c.C_BPartner_ID=C_Invoice.C_BPartner_ID")
+					.setOrderBy("C_Invoice.LIT_VATJournal_ID, C_Invoice.DocumentNo")
+					.setClient_ID()
+					.list();
+			for (MInvoice i : soInvoices) {
+				FEPAOperations fepa = new FEPAOperations(getCtx(), getAD_Client_ID(), i.getAD_Org_ID(), get_TrxName(), false, false);
+				List<MInvoice> t = new ArrayList<MInvoice>();
+				t.add(i);
+				fepa.createFile(t);
+			}
 
 			// XML -> ZIP
 			List<ME_Invoice> soEinvoices = new Query(getCtx(), ME_Invoice.Table_Name,
-					"LIT_MsSyncCredem='N' AND inv.isActive='Y' AND inv.isSOTrx='Y'", null)
+					"LIT_MsSyncCredem='N' "
+					+ "AND inv.isActive='Y' "
+					+ "AND inv.isSOTrx='Y' "
+					+ "AND inv.AD_Org_ID = ?", null)
+					.setParameters(Env.getAD_Org_ID(getCtx()))
 					.addJoinClause("join c_invoice inv on inv.c_invoice_id = lit_einvoice.c_invoice_id")
 					.setClient_ID()
 					.list();
@@ -209,7 +239,6 @@ public class ToCredemProcess extends SvrProcess {
 			ssh.close();
 			return "OK";
 		}
-
 	}
 
 	private boolean isValidRecord(MInvoice inv, MBPartner bp, MDocType doctype, ME_Invoice einv) {
