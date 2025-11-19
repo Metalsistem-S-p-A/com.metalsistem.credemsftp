@@ -34,7 +34,6 @@ import com.metalsistem.credemsftp.utils.Utils;
 
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
 import net.schmizz.sshj.SSHClient;
-import net.schmizz.sshj.sftp.RemoteResourceFilter;
 import net.schmizz.sshj.sftp.RemoteResourceInfo;
 import net.schmizz.sshj.sftp.SFTPClient;
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
@@ -46,7 +45,7 @@ import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
  *         database.
  *
  *         <p>
- *         Key functionalities of this class include: - Connecting to an SFTP
+ *         Key functionalities of this process include: - Connecting to an SFTP
  *         server to download invoice files. - Decoding and parsing XML
  *         invoices. - Creating or updating business partners and invoices in
  *         the system. - Storing attachments and handling payment schedules.
@@ -83,7 +82,6 @@ public class FromCredemProcess extends SvrProcess {
 	private Integer existingInvoices = 0;
 	private Integer port;
 
-
 	@Override
 	protected void prepare() {
 		ProcessInfoParameter[] params = getParameter();
@@ -114,7 +112,7 @@ public class FromCredemProcess extends SvrProcess {
 	protected String doIt() throws Exception {
 
 		try (final SSHClient ssh = new SSHClient()) {
-			if (certificateFingerprint.equals("test")) {
+			if ("test".equals(certificateFingerprint)) {
 				ssh.addHostKeyVerifier(new PromiscuousVerifier());
 			} else {
 				ssh.addHostKeyVerifier(certificateFingerprint);
@@ -122,14 +120,9 @@ public class FromCredemProcess extends SvrProcess {
 			ssh.connect(sftpAddress, port);
 			ssh.authPassword(userName, password.toCharArray());
 			final SFTPClient sftp = ssh.newSFTPClient();
-			List<RemoteResourceInfo> filelist = sftp.ls(path, new RemoteResourceFilter() {
-				@Override
-				public boolean accept(RemoteResourceInfo resource) {
-					final String filename = resource.getName();
-					if (filename.toLowerCase().endsWith(".xml") || filename.toLowerCase().endsWith(".p7m"))
-						return true;
-					return false;
-				}
+			List<RemoteResourceInfo> filelist = sftp.ls(path, (RemoteResourceInfo resource) -> {
+				final String filename = resource.getName();
+				return filename.toLowerCase().endsWith(".xml") || filename.toLowerCase().endsWith(".p7m");
 			});
 			if (Env.getAD_Org_ID(getCtx()) <= 0)
 				return Utils.getMessage("LIT_MsErrorOrgNotSelected");
@@ -145,6 +138,7 @@ public class FromCredemProcess extends SvrProcess {
 					} catch (Exception e) {
 						log.warning("Error parsing XML: " + e.getMessage());
 						log.warning("Skipping invoice... ");
+						addLog("Error parsing XML: " + e.getMessage());
 					}
 					if (xml == null)
 						continue;
@@ -175,8 +169,7 @@ public class FromCredemProcess extends SvrProcess {
 									"LIT_MsSyncCredem='Y' AND inv.VATDocumentNo = ?  AND inv.isSOTrx='Y' ", null)
 									.setParameters(esito.getDocumentNo())
 									.addJoinClause("join c_invoice inv on inv.c_invoice_id = lit_einvoice.c_invoice_id")
-									.setClient_ID()
-									.first();
+									.setClient_ID().first();
 							if (einv != null) {
 								esito.setLIT_EInvoice_ID(einv.get_ID());
 								esito.saveEx();
@@ -209,6 +202,7 @@ public class FromCredemProcess extends SvrProcess {
 		MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(), xml);
 		allegato.addEntry(entryAllegato);
 		allegato.setRecord_ID(pendingInvoice.get_ID());
-		allegato.save();
+		allegato.saveEx();
+		addLog("Fattura non importata" + entry.getName() + " errore: " + err);
 	}
 }

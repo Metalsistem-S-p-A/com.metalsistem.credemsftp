@@ -33,6 +33,7 @@ import org.compiere.model.MInvoice;
 import org.compiere.model.Query;
 import org.compiere.process.ProcessInfoParameter;
 import org.compiere.process.SvrProcess;
+import org.compiere.util.Env;
 
 import com.metalsistem.credemsftp.utils.SftpFile;
 
@@ -123,16 +124,18 @@ public class ToCredemProcess extends SvrProcess {
 			ssh.connect(sftpAddress, port);
 			ssh.authPassword(userName, password.toCharArray());
 			final SFTPClient sftp = ssh.newSFTPClient();
+			int orgId = Env.getAD_Org_ID(getCtx());
 
 			// CSV
 			List<MInvoice> poInvoices = new Query(getCtx(), MInvoice.Table_Name,
-					"isSoTrx='N' AND DocStatus = 'CO' AND isActive='Y' AND DateAcct < CURRENT_DATE - 1"
-					+ " and c_invoice_id in (select c_invoice_id from lit_einvoice le where le.lit_mssynccredem = 'N')", null)
-					.setClient_ID()
-					.list();
+					"isSoTrx='N' AND DocStatus = 'CO' AND isActive='Y' AND DateAcct < CURRENT_DATE - 1 AND AD_Org_ID = "
+							+ orgId
+							+ " and c_invoice_id in (select c_invoice_id from lit_einvoice le where le.lit_mssynccredem = 'N' AND AD_Org_ID = "
+							+ orgId + ")",
+					null).setClient_ID().list();
 
 			String dataOra = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-			
+
 			StringWriter sw = new StringWriter();
 			CSVFormat csvFormat = CSVFormat.DEFAULT.builder().setDelimiter(';').build();
 			CSVPrinter csvPrinter = new CSVPrinter(sw, csvFormat);
@@ -142,9 +145,8 @@ public class ToCredemProcess extends SvrProcess {
 			for (MInvoice inv : poInvoices) {
 				MBPartner bp = new MBPartner(getCtx(), inv.getC_BPartner_ID(), null);
 				MDocType doctype = new MDocType(getCtx(), inv.getDocTypeID(), null);
-				ME_Invoice einv = new Query(getCtx(), ME_Invoice.Table_Name, "C_Invoice_ID=?", null).setClient_ID()
-						.setParameters(inv.getC_Invoice_ID())
-						.first();
+				ME_Invoice einv = new Query(getCtx(), ME_Invoice.Table_Name, "C_Invoice_ID=? AND AD_Org_ID = " + orgId,
+						null).setClient_ID().setParameters(inv.getC_Invoice_ID()).first();
 				if (isValidRecord(inv, bp, doctype, einv)) {
 					einvs.add(inv);
 					einv.set_ValueOfColumn("LIT_MsSyncCredem", true);
@@ -179,10 +181,9 @@ public class ToCredemProcess extends SvrProcess {
 
 			// XML -> ZIP
 			List<ME_Invoice> soEinvoices = new Query(getCtx(), ME_Invoice.Table_Name,
-					"LIT_MsSyncCredem='N' AND inv.isActive='Y' AND inv.isSOTrx='Y'", null)
-					.addJoinClause("join c_invoice inv on inv.c_invoice_id = lit_einvoice.c_invoice_id")
-					.setClient_ID()
-					.list();
+					"LIT_MsSyncCredem='N' AND inv.isActive='Y' AND inv.isSOTrx='Y' AND AD_Org_ID = " + orgId + " ",
+					null).addJoinClause("join c_invoice inv on inv.c_invoice_id = lit_einvoice.c_invoice_id")
+					.setClient_ID().list();
 
 			if (soEinvoices.size() > 0) {
 				ByteArrayOutputStream zipOut = new ByteArrayOutputStream();

@@ -27,15 +27,22 @@ import com.metalsistem.credemsftp.model.M_MsEinvProduct;
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
 
 public class InvoiceService {
+	private static String WHERE_ORG;
+//	private static String WHERE_ORG_ALL;
 	private static final CLogger log = CLogger.getCLogger(InvoiceService.class);
+	
+	public InvoiceService() {
+		int orgId = Env.getAD_Org_ID(Env.getCtx());
+		WHERE_ORG = " AND AD_Org_ID = " + orgId + " ";
+//		WHERE_ORG_ALL = " AND AD_Org_ID IN(0, " + orgId + ",) ";
+	}
 
 	public void archiveEInvoice(byte[] xml, MInvoice inv) {
 		String noDocFile = inv.getDocumentNo().replaceAll("/", "-");
 		String nomeEinv = noDocFile + "_" + inv.getC_BPartner_ID();
 		String nomeRecord = noDocFile + "_" + inv.getC_BPartner().getName();
-		ME_Invoice einv = new Query(Env.getCtx(), ME_Invoice.Table_Name, "Name = ?", null).setClient_ID()
-				.setParameters("FE: " + nomeRecord)
-				.first();
+		ME_Invoice einv = new Query(Env.getCtx(), ME_Invoice.Table_Name, "Name = ?" + WHERE_ORG, null).setClient_ID()
+				.setParameters("FE: " + nomeRecord).first();
 		if (einv == null) {
 			einv = new ME_Invoice(Env.getCtx(), 0, null);
 			einv.setBinaryData(xml);
@@ -59,9 +66,7 @@ public class InvoiceService {
 						einv.get_UUID(), null);
 				List<MAttachmentEntry> pdfAttachment = List.of(procAttachments.getEntries());
 				MAttachmentEntry pdfStyle = pdfAttachment.stream()
-						.filter(att -> att.getFile().getName().endsWith(".xsl"))
-						.findFirst()
-						.orElse(null);
+						.filter(att -> att.getFile().getName().endsWith(".xsl")).findFirst().orElse(null);
 
 				pdfBytes = utils.create(xml, inv, true, pdfStyle);
 				if (pdfBytes != null) {
@@ -84,20 +89,14 @@ public class InvoiceService {
 		 * fattura dovrebbe essere sempre nuova. Ma non si sa mai...
 		 */
 		MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
-				"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?", null).setClient_ID()
-				.setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced())
-				.first();
+				"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG, null).setClient_ID()
+				.setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced()).first();
 		if (res == null) {
 			StringBuilder nota = new StringBuilder();
 			StringBuilder notaRitenute = new StringBuilder();
 			for (MLCOInvoiceWithholding wh : inv.getWithHoldings()) {
-				notaRitenute.append("- Ritenuta ")
-						.append(wh.getC_Tax().getRate())
-						.append("%: ")
-						.append(wh.getTaxAmt())
-						.append(" ")
-						.append(inv.getCurrencyISO())
-						.append(" \n");
+				notaRitenute.append("- Ritenuta ").append(wh.getC_Tax().getRate()).append("%: ").append(wh.getTaxAmt())
+						.append(" ").append(inv.getCurrencyISO()).append(" \n");
 
 			}
 			nota.append(notaRitenute.toString());
@@ -159,10 +158,8 @@ public class InvoiceService {
 
 	private M_MsEinvProduct getProductArrotondamento(MBPartner mbp, String type) {
 		int einv_product_id = new Query(Env.getCtx(), M_MsEinvProduct.Table_Name,
-				"IsActive = 'Y' AND LIT_MsEinvProdType = ? AND C_BPartner_ID = ?", null)
-				.setParameters(type, mbp.get_ID())
-				.setClient_ID()
-				.firstId();
+				"IsActive = 'Y' AND LIT_MsEinvProdType = ? AND C_BPartner_ID = ?" + WHERE_ORG, null)
+				.setParameters(type, mbp.get_ID()).setClient_ID().firstId();
 
 		if (einv_product_id > 0) {
 			return new M_MsEinvProduct(Env.getCtx(), einv_product_id, null);
@@ -192,11 +189,7 @@ public class InvoiceService {
 			} else if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
 				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
 				ln.setProduct(prod);
-				int taxId = inv.getInvoiceLines()
-						.stream()
-						.filter(il -> il.getProduct().equals(prod))
-						.findFirst()
-						.get()
+				int taxId = inv.getInvoiceLines().stream().filter(il -> il.getProduct().equals(prod)).findFirst().get()
 						.getC_Tax_ID();
 				ln.setC_Tax_ID(taxId);
 			} else {

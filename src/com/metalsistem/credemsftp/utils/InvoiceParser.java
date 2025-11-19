@@ -76,31 +76,41 @@ import net.schmizz.sshj.sftp.RemoteResourceInfo;
 import net.schmizz.sshj.sftp.SFTPClient;
 
 public class InvoiceParser {
-	private static final String LIT_IS_DEFAULT_TAX = "LIT_IsDefaultTax";
-	private static final String IS_DISPLAYED = "IsDisplayed";
-	private static final String LIT_XML_INVOICE_TAX_TYPE = "LIT_XMLInvoice_TaxType";
-	private static final String NATURA_LETTERA_INTENTO = "N3.5";
-	private static final String LIT_XML_PRODUCT = "LIT_M_Product_XML_ID";
-	private static final String LIT_CHECK_PAYMENT_TERM = "LIT_isNoCheckPaymentTerm";
-	private static final String DEFAULT_PAYMENT_RULE = "MP05";
-	private static final CLogger log = CLogger.getCLogger(InvoiceParser.class);
-
 	private MBPartner bp = null;
+
+	private static boolean isNewBP = false;
+	private static String WHERE_ORG;
+//	private static String WHERE_ORG_ALL;
+	private static String WHERE_ALL;
 
 	private final List<MTax> taxes;
 	private final List<MUOM> uoms;
+	private final Integer orgId;
 
 	private final String TIPO_RIGA_DETTAGLIO_LINEE = "DettaglioLinee";
 	private final String TIPO_RIGA_DATI_CASSA = "DatiCassaPrevidenziale";
 	private final String TIPO_RIGA_ARROTONDAMENTO = "Arrotondamento";
 
-	private static boolean isNewBP = false;
+	private static final String LIT_IS_DEFAULT_TAX = "LIT_IsDefaultTax";
+	private static final String LIT_XML_PRODUCT = "LIT_M_Product_XML_ID";
+	private static final String LIT_CHECK_PAYMENT_TERM = "LIT_isNoCheckPaymentTerm";
+	private static final String LIT_XML_INVOICE_TAX_TYPE = "LIT_XMLInvoice_TaxType";
+
+	private static final String IS_DISPLAYED = "IsDisplayed";
+	private static final String DEFAULT_PAYMENT_RULE = "MP05";
+	private static final String NATURA_LETTERA_INTENTO = "N3.5";
+
+	private static final CLogger log = CLogger.getCLogger(InvoiceParser.class);
 	private static final List<TipoDocumentoType> BANNED_DOCUMENT_TYPES = List.of(TipoDocumentoType.TD_04,
 			TipoDocumentoType.TD_16, TipoDocumentoType.TD_17, TipoDocumentoType.TD_18);
 
 	public InvoiceParser() {
 		taxes = loadApplicableTaxes();
 		uoms = new Query(Env.getCtx(), MUOM.Table_Name, "IsActive = 'Y'", null).setClient_ID().list();
+		orgId = Env.getAD_Org_ID(Env.getCtx());
+		WHERE_ORG = " AND AD_Org_ID = " + orgId + " ";
+//		WHERE_ORG_ALL = " AND AD_Org_ID IN(0, " + orgId + ",) ";
+		WHERE_ALL = " AND AD_Org_ID = 0 ";
 	}
 
 	public byte[] parseByteXML(byte[] xml) {
@@ -116,7 +126,6 @@ public class InvoiceParser {
 		return removeBOMIfPresent(xml);
 	}
 
-
 	private InvoiceReceived getInvoice(FatturaElettronicaType fattura) throws Exception {
 		// TODO: Gestire caso di molteplici body(?)
 		InvoiceReceived invoice = new InvoiceReceived(new MInvoice(Env.getCtx(), 0, null));
@@ -127,21 +136,15 @@ public class InvoiceParser {
 		}
 
 		DatiGeneraliDocumentoType datiGeneraliDocumento = body.getDatiGenerali().getDatiGeneraliDocumento();
-		String codice = fattura.getFatturaElettronicaHeader()
-				.getCedentePrestatore()
-				.getDatiAnagrafici()
-				.getIdFiscaleIVA()
-				.getIdCodice();
+		String codice = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getDatiAnagrafici()
+				.getIdFiscaleIVA().getIdCodice();
 
-		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name, "? in (taxID, LIT_NationalIDNumber)", null)
-				.setClient_ID()
-				.setParameters(codice)
-				.first();
+		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name, "? in (taxID, LIT_NationalIDNumber)" + WHERE_ORG,
+				null).setClient_ID().setParameters(codice).first();
 
 		if (mbp != null) {
 			MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
-					"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?", null)
-					.setClient_ID()
+					"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG, null).setClient_ID()
 					.setParameters(datiGeneraliDocumento.getNumero(), mbp.get_ID(),
 							toTimestamp(datiGeneraliDocumento.getData()))
 					.first();
@@ -156,7 +159,7 @@ public class InvoiceParser {
 		}
 
 		invoice.setIsSOTrx(false);
-		invoice.setAD_Org_ID(Env.getAD_Org_ID(Env.getCtx()));
+		invoice.setAD_Org_ID(orgId);
 		invoice.setDocumentNo(datiGeneraliDocumento.getNumero());
 		invoice.setDateInvoiced(toTimestamp(datiGeneraliDocumento.getData()));
 		invoice.setGrandTotal(datiGeneraliDocumento.getImportoTotaleDocumento());
@@ -192,12 +195,12 @@ public class InvoiceParser {
 		}
 
 		// LETTERA D'INTENTO
-		if (body.getDatiBeniServizi().getDatiRiepilogo().get(0).getNatura() != null
-				&& NATURA_LETTERA_INTENTO.equals(body.getDatiBeniServizi().getDatiRiepilogo().get(0).getNatura().value())) {
+		if (body.getDatiBeniServizi().getDatiRiepilogo().get(0).getNatura() != null && NATURA_LETTERA_INTENTO
+				.equals(body.getDatiBeniServizi().getDatiRiepilogo().get(0).getNatura().value())) {
 
 			MBPLetterIntent letter = new Query(Env.getCtx(), MBPLetterIntent.Table_Name,
 					" isSOTrx = 'N' " + "AND bp_letterintentdatevalidfrom < Current_date "
-							+ "AND bp_letterintentdatevalidto > current_date " + "AND c_bpartner_id = ?",
+							+ "AND bp_letterintentdatevalidto > current_date " + "AND c_bpartner_id = ?" + WHERE_ORG,
 					null).setClient_ID().setParameters(mbp.get_ID()).first();
 			if (letter != null)
 				invoice.set_ValueOfColumn("c_bp_partner_letterintent_id", letter.get_ID());
@@ -207,7 +210,8 @@ public class InvoiceParser {
 		List<MInvoiceLine> linee = new ArrayList<MInvoiceLine>();
 		BigDecimal imponibile = BigDecimal.ZERO;
 		for (DettaglioLineeType linea : body.getDatiBeniServizi().getDettaglioLinee()) {
-			MInvoiceLine il = new MInvoiceLine(Env.getCtx(), -1, null);
+			MInvoiceLine il = new MInvoiceLine(Env.getCtx(), 0, null);
+			il.setAD_Org_ID(orgId);
 			il.setInvoice(invoice);
 			il.setName(linea.getDescrizione());
 			il.setPrice(linea.getPrezzoUnitario());
@@ -243,11 +247,9 @@ public class InvoiceParser {
 			if (linea.getUnitaMisura() != null) {
 				for (MUOM uom : uoms) {
 					if (linea.getUnitaMisura().toLowerCase().equals(uom.getUOMSymbol().toLowerCase())
-							|| linea.getUnitaMisura()
-									.toLowerCase()
+							|| linea.getUnitaMisura().toLowerCase()
 									.equals(uom.get_Translation(MUOM.COLUMNNAME_Name, "it_IT").toLowerCase())
-							|| linea.getUnitaMisura()
-									.toLowerCase()
+							|| linea.getUnitaMisura().toLowerCase()
 									.equals(uom.get_Translation(MUOM.COLUMNNAME_UOMSymbol, "it_IT").toLowerCase())) {
 						il.setC_UOM_ID(uom.get_ID());
 						break;
@@ -261,8 +263,7 @@ public class InvoiceParser {
 		linee.addAll(parseDatiRiepilogo(invoice, body, mbp, registroIva));
 
 		// CASSA PREVIDENZIALE
-		List<DatiCassaPrevidenzialeType> datiCassa = body.getDatiGenerali()
-				.getDatiGeneraliDocumento()
+		List<DatiCassaPrevidenzialeType> datiCassa = body.getDatiGenerali().getDatiGeneraliDocumento()
 				.getDatiCassaPrevidenziale();
 		linee.addAll(parseDatiCassaPrevidenziale(invoice, mbp, registroIva, datiCassa));
 		invoice.setInvoiceLines(linee);
@@ -438,12 +439,13 @@ public class InvoiceParser {
 				if (mbpa != null)
 					ips.set_ValueOfColumn("C_BP_BankAccount_ID", mbpa.get_ID());
 				scadenze.add(ips);
-				
-				if(body.getDatiPagamento().indexOf(pagamento) == 0 && pagamento.getDettaglioPagamento().indexOf(dettaglio) == 0 && isNewBP) {
+
+				if (body.getDatiPagamento().indexOf(pagamento) == 0
+						&& pagamento.getDettaglioPagamento().indexOf(dettaglio) == 0 && isNewBP) {
 					mbp.setPaymentRule(parsePaymentRule(dpt.value()));
 					mbp.saveEx();
 				}
-				
+
 			}
 		}
 		String checkPayment = scadenze.size() > 0 ? "Y" : "N";
@@ -484,11 +486,10 @@ public class InvoiceParser {
 		for (DatiRitenutaType ritenuta : ritenute) {
 			MLCOInvoiceWithholding acconto = new MLCOInvoiceWithholding(Env.getCtx(), 0, null);
 			int typeId = DB.getSQLValue(null,
-					"select lco_withholdingType_id from lco_withholdingType where LIT_WithHoldingTypeEInv  LIKE '%' || ? || '%'  and ad_client_id = ?",
+					"select lco_withholdingType_id from lco_withholdingType where LIT_WithHoldingTypeEInv  LIKE '%' || ? || '%'  and ad_client_id = ? " +WHERE_ALL,
 					ritenuta.getTipoRitenuta().value(), Env.getAD_Client_ID(Env.getCtx()));
 			List<MTax> impostaRitenute = new Query(Env.getCtx(), MTax.Table_Name, "Name like 'Ritenuta%'", null)
-					.setClient_ID()
-					.list();
+					.setClient_ID().list();
 
 			MTax imposta = impostaRitenute.stream().filter(tax -> {
 				return tax.getName().contains(ritenuta.getAliquotaRitenuta().intValue() + "% A");
@@ -521,10 +522,8 @@ public class InvoiceParser {
 	 */
 	private MProduct getProductByTax(MTax invTax, MBPartner mbp, String type) {
 		int einv_product_id = new Query(Env.getCtx(), M_MsEinvProduct.Table_Name,
-				"IsActive = 'Y' AND C_Tax_ID = ? AND LIT_MsEinvProdType = ? AND C_BPartner_ID = ?", null)
-				.setParameters(invTax.get_ID(), type, mbp.get_ID())
-				.setClient_ID()
-				.firstId();
+				"IsActive = 'Y' AND C_Tax_ID = ? AND LIT_MsEinvProdType = ? AND C_BPartner_ID = ?" + WHERE_ORG, null)
+				.setParameters(invTax.get_ID(), type, mbp.get_ID()).setClient_ID().firstId();
 
 		if (einv_product_id > 0) {
 			M_MsEinvProduct einv_product = new M_MsEinvProduct(Env.getCtx(), einv_product_id, null);
@@ -748,15 +747,13 @@ public class InvoiceParser {
 			return res.get();
 
 		// Default per prezzo = 0
-		res = taxes.stream()
-				.filter(tax -> prezzo.compareTo(BigDecimal.ZERO) == 0
-						&& tax.get_ValueAsString("Value").startsWith("G.06"))
+		res = taxes.stream().filter(
+				tax -> prezzo.compareTo(BigDecimal.ZERO) == 0 && tax.get_ValueAsString("Value").startsWith("G.06"))
 				.findFirst();
 		if (res.isPresent())
 			return res.get();
 
-		res = taxes.stream()
-				.filter(tax -> tax.getRate().compareTo(aliquota) == 0 && tax.getSOPOType().equals("B"))
+		res = taxes.stream().filter(tax -> tax.getRate().compareTo(aliquota) == 0 && tax.getSOPOType().equals("B"))
 				.findFirst();
 		if (res.isPresent())
 			return res.get();
@@ -779,8 +776,7 @@ public class InvoiceParser {
 	 */
 	private MBPartner createAndSaveBusinessPartner(FatturaElettronicaType fattura, String piva) {
 		MBPartner mbp = new MBPartner(Env.getCtx(), 0, null);
-		DatiAnagraficiCedenteType anagrafica = fattura.getFatturaElettronicaHeader()
-				.getCedentePrestatore()
+		DatiAnagraficiCedenteType anagrafica = fattura.getFatturaElettronicaHeader().getCedentePrestatore()
 				.getDatiAnagrafici();
 		// mbp.set_ValueOfColumn("LIT_TaxId", codice);
 		mbp.setTaxID(piva);
@@ -795,7 +791,7 @@ public class InvoiceParser {
 
 		mbp.setIsVendor(true);
 		mbp.setIsCustomer(false);
-		Integer paymentTermId = new Query(Env.getCtx(), MPaymentTerm.Table_Name, "isdefault = 'Y' and isactive='Y'",
+		Integer paymentTermId = new Query(Env.getCtx(), MPaymentTerm.Table_Name, "isdefault = 'Y' and isactive='Y'" + WHERE_ALL,
 				null).setClient_ID().firstId();
 		mbp.setPO_PaymentTerm_ID(paymentTermId);
 		mbp.setPaymentRulePO(parsePaymentRule(DEFAULT_PAYMENT_RULE));
@@ -831,7 +827,7 @@ public class InvoiceParser {
 	 * @return a new {@code MBPartnerLocation} linked to the found or created
 	 *         location
 	 */
-	private MBPartnerLocation getBPLocationFromEinvoice(FatturaElettronicaType fattura) {
+	private MBPartnerLocation getBPLocationFromEinvoice(FatturaElettronicaType fattura, String name) {
 		MBPartnerLocation mbpLocation = new MBPartnerLocation(Env.getCtx(), 0, null);
 		IndirizzoType sede = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getSede();
 		MLocation location = new Query(Env.getCtx(), MLocation.Table_Name,
@@ -839,8 +835,7 @@ public class InvoiceParser {
 						+ " c_location.city ILIKE '%' || ? || '%'",
 				null).addJoinClause("JOIN c_country co on C_Location.c_country_id = co.c_country_id ")
 				.addJoinClause("JOIN c_region reg on C_Location.c_region_id = reg.c_region_id ")
-				.setParameters(sede.getIndirizzo(), sede.getCAP(), sede.getNazione(), sede.getComune())
-				.setClient_ID()
+				.setParameters(sede.getIndirizzo(), sede.getCAP(), sede.getNazione(), sede.getComune()).setClient_ID()
 				.first();
 		if (location == null) {
 			location = new MLocation(Env.getCtx(), 0, null);
@@ -852,19 +847,18 @@ public class InvoiceParser {
 			location.setPostal(sede.getCAP());
 			location.setCity(sede.getComune());
 			MCountry country = new Query(Env.getCtx(), MCountry.Table_Name, "countrycode = ?", null)
-					.setParameters(sede.getNazione())
-					.first();
+					.setParameters(sede.getNazione()).first();
 
 			if (country != null) {
 				location.setCountry(country);
 				MRegion region = new Query(Env.getCtx(), MRegion.Table_Name, "name = ? AND c_country_id = ?", null)
-						.setParameters(sede.getProvincia(), country.get_ID())
-						.first();
+						.setParameters(sede.getProvincia(), country.get_ID()).first();
 				location.setRegion(region);
 			}
 			location.saveEx();
 		}
-		mbpLocation.setName("Sede legale");
+		mbpLocation.setAD_Org_ID(orgId);
+		mbpLocation.setName(name);
 		mbpLocation.setC_Location_ID(location.get_ID());
 		return mbpLocation;
 	}
@@ -895,9 +889,7 @@ public class InvoiceParser {
 				return mbp.getBankAccounts(true)[0];
 
 			String iban = dettaglio.getIBAN();
-			MBPBankAccount mbpa = mbpas.stream()
-					.filter(bpa -> dettaglio.getIBAN().equals(bpa.getIBAN()))
-					.findFirst()
+			MBPBankAccount mbpa = mbpas.stream().filter(bpa -> dettaglio.getIBAN().equals(bpa.getIBAN())).findFirst()
 					.orElse(null);
 
 			if (mbpa != null) {
@@ -926,10 +918,8 @@ public class InvoiceParser {
 			else
 				bankName = "Banca - " + routingNo;
 
-			MBank bank = new Query(Env.getCtx(), MBank.Table_Name, "RoutingNo = ? AND isActive = 'Y'", null)
-					.setClient_ID()
-					.setParameters(routingNo)
-					.first();
+			MBank bank = new Query(Env.getCtx(), MBank.Table_Name, "RoutingNo = ? AND isActive = 'Y'" + WHERE_ORG, null)
+					.setClient_ID().setParameters(routingNo).first();
 
 			if (bank == null) {
 				bank = new MBank(Env.getCtx(), 0, null);
@@ -966,26 +956,24 @@ public class InvoiceParser {
 	 * @return the existing or newly created {@code MBPartner}
 	 */
 	private MBPartner findOrCreateBPartner(FatturaElettronicaType fattura) {
-		String codice = fattura.getFatturaElettronicaHeader()
-				.getCedentePrestatore()
-				.getDatiAnagrafici()
-				.getIdFiscaleIVA()
-				.getIdCodice();
+		String codice = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getDatiAnagrafici()
+				.getIdFiscaleIVA().getIdCodice();
 
-		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name, "? in (taxID, LIT_NationalIDNumber)", null)
-				.setClient_ID()
-				.setParameters(codice)
-				.first();
+		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name, "? in (taxID, LIT_NationalIDNumber) " + WHERE_ORG, null)
+				.setClient_ID().setParameters(codice).first();
 
 		if (mbp != null)
 			return mbp;
 
-		MBPartnerLocation mbpLocation = getBPLocationFromEinvoice(fattura);
 		mbp = createAndSaveBusinessPartner(fattura, codice);
+		mbp.setIsVendor(true);
+		mbp.setAD_Org_ID(orgId);
+
+		MBPartnerLocation mbpLocation = getBPLocationFromEinvoice(fattura, mbp.getName());
 		mbpLocation.setC_BPartner_ID(mbp.get_ID());
 		mbpLocation.saveEx();
 		mbp.setPrimaryC_BPartner_Location_ID(mbpLocation.get_ID());
-		mbp.setIsVendor(true);
+
 		mbp.saveEx();
 		bp = mbp;
 		return mbp;
@@ -1007,15 +995,12 @@ public class InvoiceParser {
 	 */
 	private MDocType findDocType(DatiGeneraliDocumentoType dgd) {
 		String tipoDocumento = dgd.getTipoDocumento().value();
-		MDocType docType = new Query(Env.getCtx(), MDocType.Table_Name, "lit_fepa_doctype = ? and issotrx='N' ", null)
-				.setClient_ID()
-				.setParameters(tipoDocumento)
-				.first();
+		MDocType docType = new Query(Env.getCtx(), MDocType.Table_Name, "lit_fepa_doctype = ? and issotrx='N' " + WHERE_ALL, null)
+				.setClient_ID().setParameters(tipoDocumento).first();
 		if (docType != null)
 			return docType;
-		return new Query(Env.getCtx(), MDocType.Table_Name, "lit_fepa_doctype = 'TD01' and issotrx='N' ", null)
-				.setClient_ID()
-				.first();
+		return new Query(Env.getCtx(), MDocType.Table_Name, "lit_fepa_doctype = 'TD01' and issotrx='N' " + WHERE_ALL, null)
+				.setClient_ID().first();
 	}
 
 	/**
@@ -1059,8 +1044,7 @@ public class InvoiceParser {
 		MRefList ref = new Query(Env.getCtx(), MRefList.Table_Name,
 				"AD_Ref_List.Name like ? AND re.name = '_Payment Rule' ", null)
 				.addJoinClause("JOIN ad_reference re on re.ad_reference_id = AD_Ref_List.ad_reference_id ")
-				.setParameters(modalitàPagamento)
-				.first();
+				.setParameters(modalitàPagamento).first();
 		return ref.getValue();
 	}
 
@@ -1078,8 +1062,8 @@ public class InvoiceParser {
 		for (int i = 1; i <= esiti.getLength(); i++) {
 			M_EsitoCredem de = new M_EsitoCredem(Env.getCtx(), 0, null);
 
-			de.setDescription((String) xpath.compile("//ESITO[" + i + "]/Descrizione/text()")
-					.evaluate(document, XPathConstants.STRING));
+			de.setDescription((String) xpath.compile("//ESITO[" + i + "]/Descrizione/text()").evaluate(document,
+					XPathConstants.STRING));
 			de.setDocumentNo((String) xpath.compile("//ESITO[" + i + "]/RiferimentoFattura/NumeroFattura/text()")
 					.evaluate(document, XPathConstants.STRING));
 			de.setLIT_MsTipoEsito(Integer.valueOf((String) xpath.compile("//ESITO[" + i + "]/TipoEsito/text()")
@@ -1100,7 +1084,8 @@ public class InvoiceParser {
 	 * @return a list of active {@code MTax} entries
 	 */
 	private List<MTax> loadApplicableTaxes() {
-		return new Query(Env.getCtx(), MTax.Table_Name, "IsActive = 'Y'", null).setClient_ID().list();
+		return new Query(Env.getCtx(), MTax.Table_Name, "IsActive = 'Y'" + WHERE_ALL, null)
+				.setParameters(orgId).setClient_ID().list();
 	}
 
 	private boolean isBannedDocument(FatturaElettronicaBodyType body) {
