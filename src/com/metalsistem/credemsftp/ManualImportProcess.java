@@ -4,8 +4,6 @@ import java.io.File;
 import java.io.FileInputStream;
 
 import org.adempiere.base.annotation.Process;
-import org.compiere.model.MInvoice;
-import org.compiere.model.MWindow;
 import org.compiere.process.ProcessInfoParameter;
 import org.compiere.process.SvrProcess;
 import org.compiere.util.Env;
@@ -18,7 +16,7 @@ import com.metalsistem.credemsftp.utils.Utils;
 @Process
 public class ManualImportProcess extends SvrProcess {
 
-	String xml;
+	private String xml;
 	private final InvoiceParser invoiceParser = new InvoiceParser();
 	private final InvoiceService invoiceService = new InvoiceService();
 
@@ -28,8 +26,10 @@ public class ManualImportProcess extends SvrProcess {
 
 		for (ProcessInfoParameter param : params) {
 			String name = param.getParameterName();
-			if ("File".equals(name)) {
-				xml = (String) param.getParameter();
+			if (param.getParameter() != null) {
+				if ("File".equals(name)) {
+					xml = param.getParameterAsString();
+				}
 			}
 		}
 	}
@@ -52,10 +52,10 @@ public class ManualImportProcess extends SvrProcess {
 			return inv.getErrorMsg();
 		}
 
-		int winUUID = Env.getZoomWindowID(MInvoice.Table_ID, inv.get_ID());
-		MWindow bpWindow = MWindow.get(winUUID);
-		return "Processo completato: " + Utils.getUrlZoom(inv, bpWindow.get_UUID(), inv.getDocumentNo());
+		String zoomLink = String.format("<a href=\"javascript:void(0)\" onClick=\"window.idempiere.directZoom(" + "'"
+				+ inv.get_KeyColumns()[0] + "'," + inv.get_ID() + ");\">%s</a>", inv.getDocumentNo());
+
+		return "La fattura è stata importata: " + zoomLink;
 	}
 
-	
 }

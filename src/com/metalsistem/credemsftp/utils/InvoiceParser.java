@@ -105,12 +105,12 @@ public class InvoiceParser {
 			TipoDocumentoType.TD_16, TipoDocumentoType.TD_17, TipoDocumentoType.TD_18);
 
 	public InvoiceParser() {
-		taxes = loadApplicableTaxes();
-		uoms = new Query(Env.getCtx(), MUOM.Table_Name, "IsActive = 'Y'", null).setClient_ID().list();
 		orgId = Env.getAD_Org_ID(Env.getCtx());
-		WHERE_ORG = " AND AD_Org_ID = " + orgId + " ";
+		WHERE_ORG = " AND AD_Org_ID = %d ".formatted(orgId);
 //		WHERE_ORG_ALL = " AND AD_Org_ID IN(0, " + orgId + ",) ";
 		WHERE_ALL = " AND AD_Org_ID = 0 ";
+		taxes = loadApplicableTaxes();
+		uoms = new Query(Env.getCtx(), MUOM.Table_Name, "IsActive = 'Y'", null).setClient_ID().list();
 	}
 
 	public byte[] parseByteXML(byte[] xml) {
@@ -1085,7 +1085,7 @@ public class InvoiceParser {
 	 */
 	private List<MTax> loadApplicableTaxes() {
 		return new Query(Env.getCtx(), MTax.Table_Name, "IsActive = 'Y'" + WHERE_ALL, null)
-				.setParameters(orgId).setClient_ID().list();
+				.setClient_ID().list();
 	}
 
 	private boolean isBannedDocument(FatturaElettronicaBodyType body) {
