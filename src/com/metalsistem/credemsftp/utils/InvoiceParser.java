@@ -217,6 +217,8 @@ public class InvoiceParser {
 			il.setPrice(linea.getPrezzoUnitario());
 			il.setLine(linea.getNumeroLinea() * 10); // iDempiere Standard
 			il.setDescription(linea.getDescrizione());
+			if (linea.getDescrizione().length() > 255)
+				il.set_ValueOfColumn("Help", linea.getDescrizione());
 			MTax invTax = getTax(registroIva, linea.getNatura(), linea.getAliquotaIVA(), linea.getPrezzoUnitario());
 			il.setC_Tax_ID(invTax.get_ID());
 
@@ -486,7 +488,8 @@ public class InvoiceParser {
 		for (DatiRitenutaType ritenuta : ritenute) {
 			MLCOInvoiceWithholding acconto = new MLCOInvoiceWithholding(Env.getCtx(), 0, null);
 			int typeId = DB.getSQLValue(null,
-					"select lco_withholdingType_id from lco_withholdingType where LIT_WithHoldingTypeEInv  LIKE '%' || ? || '%'  and ad_client_id = ? " +WHERE_ALL,
+					"select lco_withholdingType_id from lco_withholdingType where LIT_WithHoldingTypeEInv  LIKE '%' || ? || '%'  and ad_client_id = ? "
+							+ WHERE_ALL,
 					ritenuta.getTipoRitenuta().value(), Env.getAD_Client_ID(Env.getCtx()));
 			List<MTax> impostaRitenute = new Query(Env.getCtx(), MTax.Table_Name, "Name like 'Ritenuta%'", null)
 					.setClient_ID().list();
@@ -791,8 +794,8 @@ public class InvoiceParser {
 
 		mbp.setIsVendor(true);
 		mbp.setIsCustomer(false);
-		Integer paymentTermId = new Query(Env.getCtx(), MPaymentTerm.Table_Name, "isdefault = 'Y' and isactive='Y'" + WHERE_ALL,
-				null).setClient_ID().firstId();
+		Integer paymentTermId = new Query(Env.getCtx(), MPaymentTerm.Table_Name,
+				"isdefault = 'Y' and isactive='Y'" + WHERE_ALL, null).setClient_ID().firstId();
 		mbp.setPO_PaymentTerm_ID(paymentTermId);
 		mbp.setPaymentRulePO(parsePaymentRule(DEFAULT_PAYMENT_RULE));
 //		if (mbp.getPO_PaymentTerm_ID() < 1) {
@@ -959,8 +962,8 @@ public class InvoiceParser {
 		String codice = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getDatiAnagrafici()
 				.getIdFiscaleIVA().getIdCodice();
 
-		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name, "? in (taxID, LIT_NationalIDNumber) " + WHERE_ORG, null)
-				.setClient_ID().setParameters(codice).first();
+		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name, "? in (taxID, LIT_NationalIDNumber) " + WHERE_ORG,
+				null).setClient_ID().setParameters(codice).first();
 
 		if (mbp != null)
 			return mbp;
@@ -995,12 +998,13 @@ public class InvoiceParser {
 	 */
 	private MDocType findDocType(DatiGeneraliDocumentoType dgd) {
 		String tipoDocumento = dgd.getTipoDocumento().value();
-		MDocType docType = new Query(Env.getCtx(), MDocType.Table_Name, "lit_fepa_doctype = ? and issotrx='N' " + WHERE_ALL, null)
-				.setClient_ID().setParameters(tipoDocumento).first();
+		MDocType docType = new Query(Env.getCtx(), MDocType.Table_Name,
+				"lit_fepa_doctype = ? and issotrx='N' " + WHERE_ALL, null).setClient_ID().setParameters(tipoDocumento)
+				.first();
 		if (docType != null)
 			return docType;
-		return new Query(Env.getCtx(), MDocType.Table_Name, "lit_fepa_doctype = 'TD01' and issotrx='N' " + WHERE_ALL, null)
-				.setClient_ID().first();
+		return new Query(Env.getCtx(), MDocType.Table_Name, "lit_fepa_doctype = 'TD01' and issotrx='N' " + WHERE_ALL,
+				null).setClient_ID().first();
 	}
 
 	/**
@@ -1084,8 +1088,7 @@ public class InvoiceParser {
 	 * @return a list of active {@code MTax} entries
 	 */
 	private List<MTax> loadApplicableTaxes() {
-		return new Query(Env.getCtx(), MTax.Table_Name, "IsActive = 'Y'" + WHERE_ALL, null)
-				.setClient_ID().list();
+		return new Query(Env.getCtx(), MTax.Table_Name, "IsActive = 'Y'" + WHERE_ALL, null).setClient_ID().list();
 	}
 
 	private boolean isBannedDocument(FatturaElettronicaBodyType body) {

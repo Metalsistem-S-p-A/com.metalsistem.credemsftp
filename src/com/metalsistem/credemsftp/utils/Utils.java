@@ -16,15 +16,8 @@ public class Utils {
 		return string == null || string.isBlank();
 	}
 
-	public static String getUrlZoom(PO po, String windowUUID, String text) {
-		StringBuilder url = new StringBuilder("");
-		url.append("<a href=\"javascript:void(0)\" class=\"rp-href\" onclick=\"window.idempiere.zoomWindow(@"
-				+ "#clientInfo_BroadcastComponentId" + "@, '");
-		url.append(po.get_KeyColumns()[0]);
-		url.append("', '").append(po.get_ID()).append("','").append(windowUUID).append("')\">");
-		url.append(text);
-		url.append("</a>");
-
-		return url.toString();
+	public static String getUrlDirectZoom(PO inv) {
+		return String.format("<a href=\"javascript:void(0)\" onClick=\"window.idempiere.directZoom('%s',%d);\">%s</a>",
+				inv.get_KeyColumns()[0], inv.get_ID(), inv.get_ID());
 	}
 }

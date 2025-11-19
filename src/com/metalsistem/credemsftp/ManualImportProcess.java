@@ -52,10 +52,10 @@ public class ManualImportProcess extends SvrProcess {
 			return inv.getErrorMsg();
 		}
 
-		String zoomLink = String.format("<a href=\"javascript:void(0)\" onClick=\"window.idempiere.directZoom(" + "'"
-				+ inv.get_KeyColumns()[0] + "'," + inv.get_ID() + ");\">%s</a>", inv.getDocumentNo());
-
+		String zoomLink = Utils.getUrlDirectZoom(inv);
 		return "La fattura è stata importata: " + zoomLink;
 	}
+
+	
 
 }
