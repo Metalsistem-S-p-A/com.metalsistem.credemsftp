@@ -20,4 +20,8 @@ public class Utils {
 		return String.format("<a href=\"javascript:void(0)\" onClick=\"window.idempiere.directZoom('%s',%d);\">%s</a>",
 				inv.get_KeyColumns()[0], inv.get_ID(), inv.get_ID());
 	}
+	public static String getUrlDirectZoom(InvoiceReceived inv) {
+		return String.format("<a href=\"javascript:void(0)\" onClick=\"window.idempiere.directZoom('%s',%d);\">%s</a>",
+				inv.get_KeyColumns()[0], inv.get_ID(), inv.getDocumentNo());
+	}
 }

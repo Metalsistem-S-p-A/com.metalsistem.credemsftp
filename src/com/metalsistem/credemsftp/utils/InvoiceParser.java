@@ -219,7 +219,7 @@ public class InvoiceParser {
 			il.setDescription(linea.getDescrizione());
 			if (linea.getDescrizione().length() > 255)
 				il.set_ValueOfColumn("Help", linea.getDescrizione());
-			MTax invTax = getTax(registroIva, linea.getNatura(), linea.getAliquotaIVA(), linea.getPrezzoUnitario());
+			MTax invTax = getTax(registroIva, linea.getNatura(), linea.getAliquotaIVA(), linea.getPrezzoUnitario(),mbp);
 			il.setC_Tax_ID(invTax.get_ID());
 
 			if (invTax.getRate().compareTo(BigDecimal.ZERO) > 0) {
@@ -331,7 +331,7 @@ public class InvoiceParser {
 			il.setQtyInvoiced(BigDecimal.ONE);
 
 			MTax invTax = getTax(registroIva, riepilogo.getNatura(), riepilogo.getAliquotaIVA(),
-					riepilogo.getArrotondamento());
+					riepilogo.getArrotondamento(),mbp);
 
 			il.setProduct(getProductByTax(invTax, mbp, TIPO_RIGA_ARROTONDAMENTO));
 			il.setC_Tax_ID(invTax.get_ID());
@@ -368,7 +368,7 @@ public class InvoiceParser {
 			il.setName("Contributo previdenziale " + dato.getTipoCassa().value() + " " + dato.getAlCassa());
 			il.setDescription("Contributo previdenziale " + dato.getTipoCassa().value() + " " + dato.getAlCassa());
 			MTax invTax = getTax(registroIva, dato.getNatura(), dato.getAliquotaIVA(),
-					dato.getImportoContributoCassa());
+					dato.getImportoContributoCassa(),mbp);
 
 			il.setProduct(getProductByTax(invTax, mbp, TIPO_RIGA_DATI_CASSA));
 
@@ -692,8 +692,8 @@ public class InvoiceParser {
 	 * @return a matching {@code MTax} object or a new empty tax if no match is
 	 *         found
 	 */
-	private MTax getTax(final MLITVATDocTypeSequence registroIva, NaturaType natura, BigDecimal aliquota,
-			BigDecimal prezzo) {
+	private MTax getTax(final MLITVATDocTypeSequence registroIva, NaturaType natura, BigDecimal aliquota, 
+			BigDecimal prezzo, MBPartner bp) {
 		Optional<MTax> res = null;
 		// Filtra in base alla natura
 		if (natura != null) {
@@ -738,7 +738,19 @@ public class InvoiceParser {
 			else if (alt.isPresent())
 				return alt.get();
 		}
-		// Filtra in base ad Aliquota e Country from/to
+		// Filtra in base ad Aliquota e Country from/to e Persona giuridica
+		res = taxes.stream().filter(tax -> {
+			if (tax.getC_CountryGroupFrom() != null && registroIva != null) {
+				return tax.getRate().compareTo(aliquota) == 0 && tax.getSOPOType().equals("B")
+						&& tax.getC_CountryGroupFrom_ID() == registroIva.getC_CountryGroupFrom_ID()
+						&& (bp.get_ValueAsString("LIT_TaxTypeBPPartner_ID").equals(tax.get_ValueAsString("LIT_TaxTypeBPPartner_ID")) || tax.get_ValueAsString("LIT_TaxTypeBPPartner_ID").equals(""));
+			}
+			return false;
+		}).findFirst();
+		if (res.isPresent())
+			return res.get();
+		
+		// Probabile filtro ridondante
 		res = taxes.stream().filter(tax -> {
 			if (tax.getC_CountryGroupFrom() != null && registroIva != null) {
 				return tax.getRate().compareTo(aliquota) == 0 && tax.getSOPOType().equals("B")
