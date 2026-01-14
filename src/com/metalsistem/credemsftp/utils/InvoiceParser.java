@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.ByteBuffer;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
@@ -67,6 +68,7 @@ import it.cnet.idempiere.LIT_E_Invoice.modelXML2.FatturaElettronicaType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.IndirizzoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.ModalitaPagamentoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.NaturaType;
+import it.cnet.idempiere.LIT_E_Invoice.modelXML2.ScontoMaggiorazioneType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.TipoDocumentoType;
 import it.cnet.idempiere.LIT_E_Invoice.utilXML.ManageXML_new;
 import it.cnet.idempiere.VATJournalModel.MLITVATDocTypeSequence;
@@ -80,7 +82,7 @@ public class InvoiceParser {
 
 	private static boolean isNewBP = false;
 	private static String WHERE_ORG;
-//	private static String WHERE_ORG_ALL;
+	private static String WHERE_ORG_ALL;
 	private static String WHERE_ALL;
 
 	private final List<MTax> taxes;
@@ -107,7 +109,7 @@ public class InvoiceParser {
 	public InvoiceParser() {
 		orgId = Env.getAD_Org_ID(Env.getCtx());
 		WHERE_ORG = " AND AD_Org_ID = %d ".formatted(orgId);
-//		WHERE_ORG_ALL = " AND AD_Org_ID IN(0, " + orgId + ",) ";
+		WHERE_ORG_ALL = " AND AD_Org_ID IN(0, " + orgId + ") ";
 		WHERE_ALL = " AND AD_Org_ID = 0 ";
 		taxes = loadApplicableTaxes();
 		uoms = new Query(Env.getCtx(), MUOM.Table_Name, "IsActive = 'Y'", null).setClient_ID().list();
@@ -139,8 +141,9 @@ public class InvoiceParser {
 		String codice = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getDatiAnagrafici()
 				.getIdFiscaleIVA().getIdCodice();
 
-		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name, "? in (taxID, LIT_NationalIDNumber)" + WHERE_ORG,
-				null).setClient_ID().setParameters(codice).first();
+		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name,
+				"? in (LIT_taxID, LIT_NationalIDNumber_ID) " + WHERE_ORG_ALL, null).setClient_ID().setParameters(codice)
+				.first();
 
 		if (mbp != null) {
 			MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
@@ -214,16 +217,39 @@ public class InvoiceParser {
 			il.setAD_Org_ID(orgId);
 			il.setInvoice(invoice);
 			il.setName(linea.getDescrizione());
-			il.setPrice(linea.getPrezzoUnitario());
+			il.setPriceList(linea.getPrezzoUnitario());
+			BigDecimal price = linea.getPrezzoUnitario();
+			for (ScontoMaggiorazioneType sconto : linea.getScontoMaggiorazione()) {
+				BigDecimal importo = sconto.getImporto();
+				BigDecimal percentuale = sconto.getPercentuale();
+				switch (sconto.getTipo()) {
+				case MG -> {
+					if (percentuale != null)
+						price = linea.getPrezzoUnitario().add(linea.getPrezzoUnitario().multiply(percentuale)
+								.divide(BigDecimal.valueOf(100), RoundingMode.HALF_DOWN));
+					if (importo != null)
+						price = linea.getPrezzoUnitario().add(importo);
+				}
+				case SC -> {
+					if (percentuale != null)
+						price = linea.getPrezzoUnitario().subtract(linea.getPrezzoUnitario().multiply(percentuale)
+								.divide(BigDecimal.valueOf(100), RoundingMode.HALF_DOWN));
+					if (importo != null)
+						price = linea.getPrezzoUnitario().subtract(importo);
+				}
+				}
+			}
+			il.setPrice(price);
 			il.setLine(linea.getNumeroLinea() * 10); // iDempiere Standard
 			il.setDescription(linea.getDescrizione());
 			if (linea.getDescrizione().length() > 255)
 				il.set_ValueOfColumn("Help", linea.getDescrizione());
-			MTax invTax = getTax(registroIva, linea.getNatura(), linea.getAliquotaIVA(), linea.getPrezzoUnitario(),mbp);
+			MTax invTax = getTax(registroIva, linea.getNatura(), linea.getAliquotaIVA(), linea.getPrezzoUnitario(),
+					mbp);
 			il.setC_Tax_ID(invTax.get_ID());
 
 			if (invTax.getRate().compareTo(BigDecimal.ZERO) > 0) {
-				imponibile = imponibile.add(linea.getPrezzoUnitario());
+				imponibile = imponibile.add(price);
 			}
 
 			il.setProduct(getProductByTax(invTax, mbp, TIPO_RIGA_DETTAGLIO_LINEE));
@@ -331,7 +357,7 @@ public class InvoiceParser {
 			il.setQtyInvoiced(BigDecimal.ONE);
 
 			MTax invTax = getTax(registroIva, riepilogo.getNatura(), riepilogo.getAliquotaIVA(),
-					riepilogo.getArrotondamento(),mbp);
+					riepilogo.getArrotondamento(), mbp);
 
 			il.setProduct(getProductByTax(invTax, mbp, TIPO_RIGA_ARROTONDAMENTO));
 			il.setC_Tax_ID(invTax.get_ID());
@@ -367,8 +393,8 @@ public class InvoiceParser {
 			il.setPrice(dato.getImportoContributoCassa());
 			il.setName("Contributo previdenziale " + dato.getTipoCassa().value() + " " + dato.getAlCassa());
 			il.setDescription("Contributo previdenziale " + dato.getTipoCassa().value() + " " + dato.getAlCassa());
-			MTax invTax = getTax(registroIva, dato.getNatura(), dato.getAliquotaIVA(),
-					dato.getImportoContributoCassa(),mbp);
+			MTax invTax = getTax(registroIva, dato.getNatura(), dato.getAliquotaIVA(), dato.getImportoContributoCassa(),
+					mbp);
 
 			il.setProduct(getProductByTax(invTax, mbp, TIPO_RIGA_DATI_CASSA));
 
@@ -494,8 +520,18 @@ public class InvoiceParser {
 			List<MTax> impostaRitenute = new Query(Env.getCtx(), MTax.Table_Name, "Name like 'Ritenuta%'", null)
 					.setClient_ID().list();
 
+			BigDecimal aliquota = ritenuta.getAliquotaRitenuta().setScale(2, RoundingMode.HALF_DOWN);
+
+			String filtroRitenuta;
+			if (aliquota.stripTrailingZeros().scale() == 0) {
+				filtroRitenuta = aliquota.stripTrailingZeros().toPlainString();
+			} else {
+				filtroRitenuta = aliquota.setScale(2, RoundingMode.HALF_DOWN).toPlainString();
+			}
+
 			MTax imposta = impostaRitenute.stream().filter(tax -> {
-				return tax.getName().contains(ritenuta.getAliquotaRitenuta().intValue() + "% A");
+				return tax.getName()
+						.contains(filtroRitenuta+ "% A");
 			}).findFirst().get();
 
 			acconto.setLCO_WithholdingType_ID(typeId);
@@ -692,7 +728,7 @@ public class InvoiceParser {
 	 * @return a matching {@code MTax} object or a new empty tax if no match is
 	 *         found
 	 */
-	private MTax getTax(final MLITVATDocTypeSequence registroIva, NaturaType natura, BigDecimal aliquota, 
+	private MTax getTax(final MLITVATDocTypeSequence registroIva, NaturaType natura, BigDecimal aliquota,
 			BigDecimal prezzo, MBPartner bp) {
 		Optional<MTax> res = null;
 		// Filtra in base alla natura
@@ -743,13 +779,15 @@ public class InvoiceParser {
 			if (tax.getC_CountryGroupFrom() != null && registroIva != null) {
 				return tax.getRate().compareTo(aliquota) == 0 && tax.getSOPOType().equals("B")
 						&& tax.getC_CountryGroupFrom_ID() == registroIva.getC_CountryGroupFrom_ID()
-						&& (bp.get_ValueAsString("LIT_TaxTypeBPPartner_ID").equals(tax.get_ValueAsString("LIT_TaxTypeBPPartner_ID")) || tax.get_ValueAsString("LIT_TaxTypeBPPartner_ID").equals(""));
+						&& (bp.get_ValueAsString("LIT_TaxTypeBPPartner_ID")
+								.equals(tax.get_ValueAsString("LIT_TaxTypeBPPartner_ID"))
+								|| tax.get_ValueAsString("LIT_TaxTypeBPPartner_ID").equals(""));
 			}
 			return false;
 		}).findFirst();
 		if (res.isPresent())
 			return res.get();
-		
+
 		// Probabile filtro ridondante
 		res = taxes.stream().filter(tax -> {
 			if (tax.getC_CountryGroupFrom() != null && registroIva != null) {
@@ -793,10 +831,12 @@ public class InvoiceParser {
 		MBPartner mbp = new MBPartner(Env.getCtx(), 0, null);
 		DatiAnagraficiCedenteType anagrafica = fattura.getFatturaElettronicaHeader().getCedentePrestatore()
 				.getDatiAnagrafici();
-		// mbp.set_ValueOfColumn("LIT_TaxId", codice);
+		mbp.set_ValueOfColumn("LIT_TaxId", piva);
 		mbp.setTaxID(piva);
 		mbp.set_ValueOfColumn("LIT_NationalIdNumber",
-				!Utils.isBlank(anagrafica.getCodiceFiscale()) ? anagrafica.getCodiceFiscale() : piva);
+				!Utils.isBlank(anagrafica.getCodiceFiscale()) ? anagrafica.getCodiceFiscale() : null);
+		mbp.set_ValueOfColumn("LIT_NationalIdNumber_ID",
+				!Utils.isBlank(anagrafica.getCodiceFiscale()) ? anagrafica.getCodiceFiscale() : null);
 
 		if (anagrafica.getAnagrafica().getDenominazione() != null)
 			mbp.setName(anagrafica.getAnagrafica().getDenominazione());
@@ -974,13 +1014,7 @@ public class InvoiceParser {
 		String codice = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getDatiAnagrafici()
 				.getIdFiscaleIVA().getIdCodice();
 
-		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name, "? in (taxID, LIT_NationalIDNumber) " + WHERE_ORG,
-				null).setClient_ID().setParameters(codice).first();
-
-		if (mbp != null)
-			return mbp;
-
-		mbp = createAndSaveBusinessPartner(fattura, codice);
+		MBPartner mbp = createAndSaveBusinessPartner(fattura, codice);
 		mbp.setIsVendor(true);
 		mbp.setAD_Org_ID(orgId);
 

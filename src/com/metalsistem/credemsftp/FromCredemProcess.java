@@ -68,7 +68,6 @@ import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
 public class FromCredemProcess extends SvrProcess {
 	private final InvoiceParser invoiceParser = new InvoiceParser();
 	private final InvoiceService invoiceService = new InvoiceService();
-//	private final StorageProvider storageProvider = new StorageProvider();
 
 	private final String backupPath = "/mnt/idempierefs/MsBackupCredem/";
 
@@ -197,6 +196,7 @@ public class FromCredemProcess extends SvrProcess {
 		pendingInvoice.setName("Fattura: " + entry.getName());
 		pendingInvoice.setDescription(err);
 		pendingInvoice.saveEx();
+		invoiceService.publishNewPendingInvoiceMessage(pendingInvoice);
 		MAttachment allegato = new MAttachment(Env.getCtx(), M_PendingInvoices.Table_ID, pendingInvoice.get_ID(),
 				pendingInvoice.get_UUID(), null);
 		MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(), xml);
