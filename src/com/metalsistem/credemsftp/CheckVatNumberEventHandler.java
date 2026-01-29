@@ -1,9 +1,12 @@
 package com.metalsistem.credemsftp;
 
+import java.awt.Dialog;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 import org.adempiere.base.event.AbstractEventHandler;
 import org.adempiere.base.event.IEventManager;
@@ -55,8 +58,7 @@ public class CheckVatNumberEventHandler extends AbstractEventHandler {
 				litVAT = new Query(Env.getCtx(), MLITVATDocTypeSequence.Table_Name,
 						I_C_Invoice_lit.COLUMNNAME_LIT_VATJournal_ID + "=?", null).setClient_ID()
 						.setParameters(inv.get_ValueAsInt(I_C_Invoice_lit.COLUMNNAME_LIT_VATJournal_ID))
-						.setOnlyActiveRecords(true)
-						.first();
+						.setOnlyActiveRecords(true).first();
 			} else
 				litVAT = MLITVATDocTypeSequence.getVATDocTypeSequence(inv, fromId, toId);
 
@@ -86,6 +88,23 @@ public class CheckVatNumberEventHandler extends AbstractEventHandler {
 							rs.close();
 							stmt.close();
 							throw new AdempiereException(msg);
+//							CompletableFuture<Boolean> future = new CompletableFuture<>();
+//							AEnv.executeAsyncDesktopTask(() -> {
+//								Dialog.ask(0, msg, result -> {
+//									future.complete(result);
+//								});
+//							});
+//							String res = null;
+//							try {
+//								if (future.get()) {
+//									res = null;
+//								} else {
+//									res = "Ordine non completato";
+//								}
+//							} catch (InterruptedException | ExecutionException e) {
+//								// TODO Auto-generated catch block
+//								e.printStackTrace();
+//							}
 						}
 					}
 				} catch (SQLException e) {

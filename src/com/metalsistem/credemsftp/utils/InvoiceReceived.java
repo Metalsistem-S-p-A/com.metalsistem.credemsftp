@@ -15,10 +15,11 @@ public class InvoiceReceived extends MInvoice {
 
 	private static final long serialVersionUID = 8725224945859420772L;
 
-	private List<MAttachmentEntry> attachmentEntries = new ArrayList<MAttachmentEntry>();
-	private List<MInvoicePaySchedule> scheduledPayments = new ArrayList<MInvoicePaySchedule>();
 	private List<MInvoiceLine> invoiceLines = new ArrayList<MInvoiceLine>();
+	private List<MAttachmentEntry> attachmentEntries = new ArrayList<MAttachmentEntry>();
 	private List<MLCOInvoiceWithholding> withHoldings = new ArrayList<MLCOInvoiceWithholding>();
+	private List<MInvoicePaySchedule> scheduledPayments = new ArrayList<MInvoicePaySchedule>();
+	private String withHoldingsNote = "";
 	private BigDecimal grandTotalXML = BigDecimal.ZERO;
 	private String errorMsg = "";
 
@@ -77,6 +78,14 @@ public class InvoiceReceived extends MInvoice {
 
 	public void setGrandTotalXML(BigDecimal grandTotalXML) {
 		this.grandTotalXML = grandTotalXML;
+	}
+
+	public String getWithHoldingsNote() {
+		return withHoldingsNote;
+	}
+
+	public void setWithHoldingsNote(String withHoldingsNote) {
+		this.withHoldingsNote = withHoldingsNote;
 	}
 
 }

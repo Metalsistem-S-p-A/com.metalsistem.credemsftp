@@ -1,6 +1,5 @@
 package com.metalsistem.credemsftp.utils;
 
-import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -13,7 +12,6 @@ import org.compiere.model.MInvoice;
 import org.compiere.model.MInvoiceLine;
 import org.compiere.model.MInvoicePaySchedule;
 import org.compiere.model.MProcess;
-import org.compiere.model.MProduct;
 import org.compiere.model.MRole;
 import org.compiere.model.MSysConfig;
 import org.compiere.model.MWindow;
@@ -21,10 +19,8 @@ import org.compiere.model.PO;
 import org.compiere.model.Query;
 import org.compiere.util.CLogger;
 import org.compiere.util.Env;
-import org.globalqss.model.MLCOInvoiceWithholding;
 import org.idempiere.broadcast.BroadcastMsgUtil;
 
-import com.metalsistem.credemsftp.model.M_MsEinvProduct;
 import com.metalsistem.credemsftp.model.M_PendingInvoices;
 
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
@@ -96,13 +92,8 @@ public class InvoiceService {
 				.setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced()).first();
 		if (res == null) {
 			StringBuilder nota = new StringBuilder();
-			StringBuilder notaRitenute = new StringBuilder();
-			for (MLCOInvoiceWithholding wh : inv.getWithHoldings()) {
-				notaRitenute.append("- Ritenuta ").append(wh.getC_Tax().getRate()).append("%: ").append(wh.getTaxAmt())
-						.append(" ").append(inv.getCurrencyISO()).append(" \n");
-
-			}
-			nota.append(notaRitenute.toString());
+			
+			nota.append(inv.getWithHoldingsNote());
 			MBPartner bp = new MBPartner(Env.getCtx(), inv.getC_BPartner_ID(), null);
 			try {
 				inv.saveEx();

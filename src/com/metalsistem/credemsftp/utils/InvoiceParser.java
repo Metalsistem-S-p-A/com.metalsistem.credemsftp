@@ -43,9 +43,7 @@ import org.compiere.model.MTax;
 import org.compiere.model.MUOM;
 import org.compiere.model.Query;
 import org.compiere.util.CLogger;
-import org.compiere.util.DB;
 import org.compiere.util.Env;
-import org.globalqss.model.MLCOInvoiceWithholding;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
@@ -78,6 +76,8 @@ import net.schmizz.sshj.sftp.RemoteResourceInfo;
 import net.schmizz.sshj.sftp.SFTPClient;
 
 public class InvoiceParser {
+	public static final String FATTURA_DUPLICATA = "Fattura già presente nel sistema";
+
 	private MBPartner bp = null;
 
 	private static boolean isNewBP = false;
@@ -132,10 +132,10 @@ public class InvoiceParser {
 		// TODO: Gestire caso di molteplici body(?)
 		InvoiceReceived invoice = new InvoiceReceived(new MInvoice(Env.getCtx(), 0, null));
 		FatturaElettronicaBodyType body = fattura.getFatturaElettronicaBody().get(0);
-		if (isBannedDocument(body)) {
-			invoice.setErrorMsg("Fattura non importata: tipo documento non valido");
-			return invoice;
-		}
+//		if (isBannedDocument(body)) {
+//			invoice.setErrorMsg("Fattura non importata: tipo documento non valido");
+//			return invoice;
+//		}
 
 		DatiGeneraliDocumentoType datiGeneraliDocumento = body.getDatiGenerali().getDatiGeneraliDocumento();
 		String codice = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getDatiAnagrafici()
@@ -153,7 +153,8 @@ public class InvoiceParser {
 					.first();
 			if (res != null) {
 				// Fattura già importata
-				invoice.setErrorMsg("Fattura già presente nel sistema");
+				invoice.setDocumentNo(datiGeneraliDocumento.getNumero());
+				invoice.setErrorMsg(FATTURA_DUPLICATA);
 				return invoice;
 			}
 		} else {
@@ -303,8 +304,8 @@ public class InvoiceParser {
 
 		// RITENUTE
 		List<DatiRitenutaType> datiRitenuta = body.getDatiGenerali().getDatiGeneraliDocumento().getDatiRitenuta();
-		List<MLCOInvoiceWithholding> ritenute = parseDatiRitenuta(imponibile, datiRitenuta);
-		invoice.setWithHoldings(ritenute);
+		invoice.setWithHoldingsNote(parseDatiRitenuta(imponibile, datiRitenuta));
+//		invoice.setWithHoldings(ritenute);
 
 		BigDecimal totaleDocumento = datiGeneraliDocumento.getImportoTotaleDocumento();
 //		for (MLCOInvoiceWithholding rit : ritenute) {
@@ -508,40 +509,43 @@ public class InvoiceParser {
 	 *         data
 	 * @throws Exception if any required lookup (withholding type or tax) fails
 	 */
-	private List<MLCOInvoiceWithholding> parseDatiRitenuta(BigDecimal imponibile, List<DatiRitenutaType> ritenute)
-			throws Exception {
-		List<MLCOInvoiceWithholding> acconti = new ArrayList<>();
+	private String parseDatiRitenuta(BigDecimal imponibile, List<DatiRitenutaType> ritenute) throws Exception {
+//		List<MLCOInvoiceWithholding> acconti = new ArrayList<>();
+		StringBuilder notaRitenute = new StringBuilder();
 		for (DatiRitenutaType ritenuta : ritenute) {
-			MLCOInvoiceWithholding acconto = new MLCOInvoiceWithholding(Env.getCtx(), 0, null);
-			int typeId = DB.getSQLValue(null,
-					"select lco_withholdingType_id from lco_withholdingType where LIT_WithHoldingTypeEInv  LIKE '%' || ? || '%'  and ad_client_id = ? "
-							+ WHERE_ALL,
-					ritenuta.getTipoRitenuta().value(), Env.getAD_Client_ID(Env.getCtx()));
-			List<MTax> impostaRitenute = new Query(Env.getCtx(), MTax.Table_Name, "Name like 'Ritenuta%'", null)
-					.setClient_ID().list();
+//			MLCOInvoiceWithholding acconto = new MLCOInvoiceWithholding(Env.getCtx(), 0, null);
+//			int typeId = DB.getSQLValue(null,
+//					"select lco_withholdingType_id from lco_withholdingType where LIT_WithHoldingTypeEInv  LIKE '%' || ? || '%'  and ad_client_id = ? "
+//							+ WHERE_ALL,
+//					ritenuta.getTipoRitenuta().value(), Env.getAD_Client_ID(Env.getCtx()));
+////			List<MTax> impostaRitenute = new Query(Env.getCtx(), MTax.Table_Name, "Name like 'Ritenuta%'", null)
+////					.setClient_ID().list();
 
 			BigDecimal aliquota = ritenuta.getAliquotaRitenuta().setScale(2, RoundingMode.HALF_DOWN);
+//
+//			String filtroRitenuta;
+//			if (aliquota.stripTrailingZeros().scale() == 0) {
+//				filtroRitenuta = aliquota.stripTrailingZeros().toPlainString();
+//			} else {
+//				filtroRitenuta = aliquota.setScale(2, RoundingMode.HALF_DOWN).toPlainString();
+//			}
 
-			String filtroRitenuta;
-			if (aliquota.stripTrailingZeros().scale() == 0) {
-				filtroRitenuta = aliquota.stripTrailingZeros().toPlainString();
-			} else {
-				filtroRitenuta = aliquota.setScale(2, RoundingMode.HALF_DOWN).toPlainString();
-			}
+//			MTax imposta = impostaRitenute.stream().filter(tax -> {
+//				return tax.getName()
+//						.contains(filtroRitenuta+ "% A");
+//			}).findFirst().get();
 
-			MTax imposta = impostaRitenute.stream().filter(tax -> {
-				return tax.getName()
-						.contains(filtroRitenuta+ "% A");
-			}).findFirst().get();
+			notaRitenute.append("- Ritenuta ").append(aliquota).append("%: ").append(ritenuta.getImportoRitenuta())
+					.append(" \n");
 
-			acconto.setLCO_WithholdingType_ID(typeId);
-			acconto.setC_Tax_ID(imposta.get_ID());
-			acconto.setTaxBaseAmt(imponibile);
-			acconto.setTaxAmt(ritenuta.getImportoRitenuta());
+//			acconto.setLCO_WithholdingType_ID(typeId);
+//			acconto.setC_Tax_ID(imposta.get_ID());
+//			acconto.setTaxBaseAmt(imponibile);
+//			acconto.setTaxAmt(ritenuta.getImportoRitenuta());
 
-			acconti.add(acconto);
+//			acconti.add(acconto);
 		}
-		return acconti;
+		return notaRitenute.toString();
 	}
 
 	/**

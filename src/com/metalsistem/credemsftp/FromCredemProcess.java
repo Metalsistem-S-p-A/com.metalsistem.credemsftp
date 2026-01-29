@@ -155,6 +155,10 @@ public class FromCredemProcess extends SvrProcess {
 							e.printStackTrace();
 							backupXml(entry, inv, xml, e.getMessage());
 						}
+					} else if (InvoiceParser.FATTURA_DUPLICATA.equals(inv.getErrorMsg())) {
+						log.warning(InvoiceParser.FATTURA_DUPLICATA);
+						addLog("Fattura " + entry.getName() + " già presente nel sistema ");
+						sftp.rm(entry.getPath());
 					} else {
 						backupXml(entry, inv, xml, inv.getErrorMsg());
 					}

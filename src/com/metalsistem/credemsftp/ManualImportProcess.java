@@ -48,6 +48,10 @@ public class ManualImportProcess extends SvrProcess {
 		if (inv.getErrorMsg().isBlank()) {
 			inv = invoiceService.saveInvoice(inv);
 			invoiceService.archiveEInvoice(parsedData, inv);
+		} else if (InvoiceParser.FATTURA_DUPLICATA.equals(inv.getErrorMsg())) {
+			log.warning(InvoiceParser.FATTURA_DUPLICATA);
+			addLog("Fattura " + inv.getDocumentNo() + " già presente nel sistema ");
+			return InvoiceParser.FATTURA_DUPLICATA;
 		} else {
 			return inv.getErrorMsg();
 		}
@@ -55,7 +59,5 @@ public class ManualImportProcess extends SvrProcess {
 		String zoomLink = Utils.getUrlDirectZoom(inv);
 		return "La fattura è stata importata: " + zoomLink;
 	}
-
-	
 
 }
