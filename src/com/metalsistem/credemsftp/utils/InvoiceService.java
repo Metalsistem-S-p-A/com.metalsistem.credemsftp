@@ -288,7 +288,7 @@ public class InvoiceService {
 	}
 
 	private MRole getAdminClientRole() {
-		MRole role = new Query(Env.getCtx(), MRole.Table_Name, "name = 'Amministratore Client'", null).setClient_ID()
+		MRole role = new Query(Env.getCtx(), MRole.Table_Name, "name = 'Amministratore client'", null).setClient_ID()
 				.first();
 		return role;
 	}
