@@ -130,7 +130,7 @@ public class InvoiceService {
 //				}
 			}
 //			nota.append(notaDescrizione.toString());
-			checkTotal(inv);
+			//checkTotal(inv);
 			log.info("Linee Fattura importate");
 
 			inv.set_ValueOfColumn("Note", nota.toString());
@@ -159,7 +159,7 @@ public class InvoiceService {
 		return inv;
 	}
 
-	private M_MsEinvProduct getProductArrotondamento(MBPartner mbp, String type) {
+	/*private M_MsEinvProduct getProductArrotondamento(MBPartner mbp, String type) {
 		int einv_product_id = new Query(Env.getCtx(), M_MsEinvProduct.Table_Name,
 				"IsActive = 'Y' AND LIT_MsEinvProdType = ? AND C_BPartner_ID = ?" + WHERE_ORG, null)
 				.setParameters(type, mbp.get_ID()).setClient_ID().firstId();
@@ -168,9 +168,9 @@ public class InvoiceService {
 			return new M_MsEinvProduct(Env.getCtx(), einv_product_id, null);
 		}
 		return null;
-	}
+	}*/
 
-	private void checkTotal(InvoiceReceived inv) {
+	/*private void checkTotal(InvoiceReceived inv) {
 		MInvoice invDb = new MInvoice(Env.getCtx(), inv.get_ID(), null);
 
 		BigDecimal xml = inv.getGrandTotalXML();
@@ -205,7 +205,7 @@ public class InvoiceService {
 			inv.saveEx();
 		}
 
-	}
+	}*/
 
 //	private void publishNewPendingInvoiceMessage(M_PendingInvoices inv) {
 //		MBroadcastMessage msg = new MBroadcastMessage(Env.getCtx(), 0, null);

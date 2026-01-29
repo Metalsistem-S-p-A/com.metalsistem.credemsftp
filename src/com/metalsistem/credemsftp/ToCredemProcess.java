@@ -30,6 +30,7 @@ import org.apache.commons.csv.CSVPrinter;
 import org.compiere.model.MBPartner;
 import org.compiere.model.MDocType;
 import org.compiere.model.MInvoice;
+import org.compiere.model.MSysConfig;
 import org.compiere.model.Query;
 import org.compiere.process.ProcessInfoParameter;
 import org.compiere.process.SvrProcess;
@@ -181,27 +182,29 @@ public class ToCredemProcess extends SvrProcess {
 				sftp.put(new SftpFile(csvName, sw.toString().getBytes()), path + csvName);
 			}
 			
-			// Generate XML
-			List<MInvoice> soInvoices = new Query(getCtx(), MInvoice.Table_Name,
-					"C_Invoice.IsSOTrx='Y' "
-					+ "AND C_Invoice.DocStatus IN ('CO','CL') "
-					+ "AND C_Invoice.DateInvoiced>='2019-01-01' "
-					+ "AND dt.LIT_FEPA_DOCTYPE IS NOT NULL "
-					+ "AND le.C_Invoice_ID IS NULL "
-					+ "AND C.LIT_FEPA_IPA IS NOT NULL "
-					+ "AND C_Invoice.AD_Org_ID = ? ", null)
-					.setParameters(Env.getAD_Org_ID(getCtx()))
-					.addJoinClause("LEFT JOIN C_DocType dt ON dt.C_DocType_ID=C_Invoice.C_DocTypeTarget_ID")
-					.addJoinClause("LEFT JOIN LIT_EInvoice le ON le.C_Invoice_ID=C_Invoice.C_Invoice_ID")
-					.addJoinClause("LEFT JOIN C_BPartner c ON c.C_BPartner_ID=C_Invoice.C_BPartner_ID")
-					.setOrderBy("C_Invoice.LIT_VATJournal_ID, C_Invoice.DocumentNo")
-					.setClient_ID()
-					.list();
-			for (MInvoice i : soInvoices) {
-				FEPAOperations fepa = new FEPAOperations(getCtx(), getAD_Client_ID(), i.getAD_Org_ID(), get_TrxName(), false, false);
-				List<MInvoice> t = new ArrayList<MInvoice>();
-				t.add(i);
-				fepa.createFile(t);
+			if(MSysConfig.getBooleanValue("LIT_MsAutoGenerateFEPA", false, getAD_Client_ID(), orgId)) {
+				// Generate XML
+				List<MInvoice> soInvoices = new Query(getCtx(), MInvoice.Table_Name,
+						"(C_Invoice.IsSOTrx='Y' OR (C_Invoice.IsSOTrx='N' AND C_Invoice.LIT_FEPA_DOCTYPE  IN ('TD16','TD17', 'TD18', 'TD19')))  "
+						+ "AND C_Invoice.DocStatus IN ('CO','CL') "
+						+ "AND C_Invoice.DateInvoiced>='2019-01-01' "
+						+ "AND dt.LIT_FEPA_DOCTYPE IS NOT NULL "
+						+ "AND le.C_Invoice_ID IS NULL "
+						+ "AND C.LIT_FEPA_IPA IS NOT NULL "
+						+ "AND C_Invoice.AD_Org_ID = ? ", null)
+						.setParameters(Env.getAD_Org_ID(getCtx()))
+						.addJoinClause("LEFT JOIN C_DocType dt ON dt.C_DocType_ID=C_Invoice.C_DocTypeTarget_ID")
+						.addJoinClause("LEFT JOIN LIT_EInvoice le ON le.C_Invoice_ID=C_Invoice.C_Invoice_ID")
+						.addJoinClause("LEFT JOIN C_BPartner c ON c.C_BPartner_ID=C_Invoice.C_BPartner_ID")
+						.setOrderBy("C_Invoice.LIT_VATJournal_ID, C_Invoice.DocumentNo")
+						.setClient_ID()
+						.list();
+				for (MInvoice i : soInvoices) {
+					FEPAOperations fepa = new FEPAOperations(getCtx(), getAD_Client_ID(), i.getAD_Org_ID(), get_TrxName(), false, false);
+					List<MInvoice> t = new ArrayList<MInvoice>();
+					t.add(i);
+					fepa.createFile(t);
+				}
 			}
 
 			// XML -> ZIP
