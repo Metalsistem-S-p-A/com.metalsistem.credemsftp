@@ -1,12 +1,10 @@
 package com.metalsistem.credemsftp;
 
-import java.awt.Dialog;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.List;
 
 import org.adempiere.base.event.AbstractEventHandler;
 import org.adempiere.base.event.IEventManager;
@@ -40,6 +38,7 @@ public class CheckVatNumberEventHandler extends AbstractEventHandler {
 				Env.getAD_Org_ID(Env.getCtx()))) {
 			return;
 		}
+		  
 		if (IEventTopics.DOC_AFTER_COMPLETE.equals(event.getTopic())) {
 			MInvoice inv = (MInvoice) getPO(event);
 			int fromId = 0;

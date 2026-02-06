@@ -8,7 +8,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.ByteBuffer;
 import java.sql.Timestamp;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -448,16 +447,21 @@ public class InvoiceParser {
 
 				Timestamp scadenza = dettaglio.getDataScadenzaPagamento() != null
 						? new Timestamp(dettaglio.getDataScadenzaPagamento().toGregorianCalendar().getTimeInMillis())
-						: Timestamp.valueOf(LocalDateTime.now());
+						: null;
 
 				Timestamp scadenzaSconto = dettaglio.getDataLimitePagamentoAnticipato() != null
 						? new Timestamp(
 								dettaglio.getDataLimitePagamentoAnticipato().toGregorianCalendar().getTimeInMillis())
-						: scadenza;
+						: null;
+
+				if (scadenza == null || scadenzaSconto == null)
+					continue;
+
 				ips.setDueDate(scadenza);
 				ips.setDiscountDate(scadenzaSconto);
 				// In caso non ci siano le date, queste vengono generate
 				// in idempiere al momento del completamento della fattura
+				
 				// CondizioniPagamentoType cpt = pagamento.getCondizioniPagamento();
 				// int pTerm = parsePaymentTermId(cpt.value());
 				// ips.set_ValueOfColumn("LIT_PaymentTermType",
@@ -479,11 +483,6 @@ public class InvoiceParser {
 		}
 		String checkPayment = scadenze.size() > 0 ? "Y" : "N";
 		invoice.set_ValueOfColumn("LIT_isNoCheckPaymentTerm", checkPayment);
-		if (scadenze.size() > 0) {
-			invoice.set_ValueOfColumn(LIT_CHECK_PAYMENT_TERM, "Y");
-		} else {
-			invoice.set_ValueOfColumn(LIT_CHECK_PAYMENT_TERM, "N");
-		}
 		return scadenze;
 	}
 
