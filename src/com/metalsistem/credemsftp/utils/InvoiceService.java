@@ -36,23 +36,24 @@ public class InvoiceService {
 //		WHERE_ORG_ALL = " AND AD_Org_ID IN(0, " + orgId + ",) ";
 	}
 
-	public void archiveEInvoice(byte[] xml, MInvoice inv) {
+	public void archiveEInvoice(byte[] xml, InvoiceReceived inv) {
 		String noDocFile = inv.getDocumentNo().replaceAll("/", "-");
 		String nomeEinv = noDocFile + "_" + inv.getC_BPartner_ID();
 		String nomeRecord = noDocFile + "_" + inv.getC_BPartner().getName();
+		String nomeDoc = "FE: " + nomeRecord;
 		ME_Invoice einv = new Query(Env.getCtx(), ME_Invoice.Table_Name, "Name = ?" + WHERE_ORG, null).setClient_ID()
-				.setParameters("FE: " + nomeRecord).first();
+				.setParameters(nomeDoc).first();
 		if (einv == null) {
 			einv = new ME_Invoice(Env.getCtx(), 0, null);
 			einv.setBinaryData(xml);
-			einv.setName("FE: " + nomeRecord);
+			einv.setName(nomeDoc);
 			einv.setC_DocType_ID(inv.getDocTypeID());
 			einv.setC_Invoice_ID(inv.getC_Invoice_ID());
 			einv.setDocumentNo(inv.getDocumentNo());
 			einv.setFileName("xml-" + nomeEinv + ".xml");
 			einv.setDateInvoiced(inv.getDateInvoiced());
 			einv.set_ValueOfColumn("LIT_MsSyncCredem", false);
-
+			einv.set_ValueOfColumn(InvoiceParser.TIPO_DOC_FEPA, inv.getTipoDocumento());
 			einv.saveEx();
 
 			MAttachment attachment = new MAttachment(Env.getCtx(), 0, null);
@@ -92,7 +93,7 @@ public class InvoiceService {
 				.setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced()).first();
 		if (res == null) {
 			StringBuilder nota = new StringBuilder();
-			
+
 			nota.append(inv.getWithHoldingsNote());
 			MBPartner bp = new MBPartner(Env.getCtx(), inv.getC_BPartner_ID(), null);
 			try {
@@ -121,7 +122,7 @@ public class InvoiceService {
 //				}
 			}
 //			nota.append(notaDescrizione.toString());
-			//checkTotal(inv);
+			// checkTotal(inv);
 			log.info("Linee Fattura importate");
 
 			inv.set_ValueOfColumn("Note", nota.toString());
@@ -150,53 +151,42 @@ public class InvoiceService {
 		return inv;
 	}
 
-	/*private M_MsEinvProduct getProductArrotondamento(MBPartner mbp, String type) {
-		int einv_product_id = new Query(Env.getCtx(), M_MsEinvProduct.Table_Name,
-				"IsActive = 'Y' AND LIT_MsEinvProdType = ? AND C_BPartner_ID = ?" + WHERE_ORG, null)
-				.setParameters(type, mbp.get_ID()).setClient_ID().firstId();
+	/*
+	 * private M_MsEinvProduct getProductArrotondamento(MBPartner mbp, String type)
+	 * { int einv_product_id = new Query(Env.getCtx(), M_MsEinvProduct.Table_Name,
+	 * "IsActive = 'Y' AND LIT_MsEinvProdType = ? AND C_BPartner_ID = ?" +
+	 * WHERE_ORG, null) .setParameters(type, mbp.get_ID()).setClient_ID().firstId();
+	 * 
+	 * if (einv_product_id > 0) { return new M_MsEinvProduct(Env.getCtx(),
+	 * einv_product_id, null); } return null; }
+	 */
 
-		if (einv_product_id > 0) {
-			return new M_MsEinvProduct(Env.getCtx(), einv_product_id, null);
-		}
-		return null;
-	}*/
-
-	/*private void checkTotal(InvoiceReceived inv) {
-		MInvoice invDb = new MInvoice(Env.getCtx(), inv.get_ID(), null);
-
-		BigDecimal xml = inv.getGrandTotalXML();
-		BigDecimal saved = invDb.getGrandTotal();
-		BigDecimal diff = xml.subtract(saved);
-
-		if (diff.compareTo(BigDecimal.ZERO) != 0) {
-			MBPartner mbp = new MBPartner(Env.getCtx(), inv.getC_BPartner_ID(), null);
-			MInvoiceLine ln = new MInvoiceLine(inv);
-			ln.setName("Arrotondamento totale");
-			ln.setDescription("Arrotondamento totale");
-			ln.setPrice(diff);
-
-			M_MsEinvProduct einv_prod = getProductArrotondamento(mbp, "ArrotondamentoIdempiere");
-			if (einv_prod != null) {
-				MProduct prod = new MProduct(Env.getCtx(), einv_prod.getM_Product_ID(), null);
-				ln.setProduct(prod);
-				ln.setC_Tax_ID(einv_prod.getC_Tax_ID());
-			} else if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
-				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
-				ln.setProduct(prod);
-				int taxId = inv.getInvoiceLines().stream().filter(il -> il.getProduct().equals(prod)).findFirst().get()
-						.getC_Tax_ID();
-				ln.setC_Tax_ID(taxId);
-			} else {
-				int taxId = inv.getTaxes(true)[0].get_ID();
-				ln.setC_Tax_ID(taxId);
-			}
-			ln.setQtyEntered(BigDecimal.ONE);
-			ln.setQtyInvoiced(BigDecimal.ONE);
-			ln.saveEx();
-			inv.saveEx();
-		}
-
-	}*/
+	/*
+	 * private void checkTotal(InvoiceReceived inv) { MInvoice invDb = new
+	 * MInvoice(Env.getCtx(), inv.get_ID(), null);
+	 * 
+	 * BigDecimal xml = inv.getGrandTotalXML(); BigDecimal saved =
+	 * invDb.getGrandTotal(); BigDecimal diff = xml.subtract(saved);
+	 * 
+	 * if (diff.compareTo(BigDecimal.ZERO) != 0) { MBPartner mbp = new
+	 * MBPartner(Env.getCtx(), inv.getC_BPartner_ID(), null); MInvoiceLine ln = new
+	 * MInvoiceLine(inv); ln.setName("Arrotondamento totale");
+	 * ln.setDescription("Arrotondamento totale"); ln.setPrice(diff);
+	 * 
+	 * M_MsEinvProduct einv_prod = getProductArrotondamento(mbp,
+	 * "ArrotondamentoIdempiere"); if (einv_prod != null) { MProduct prod = new
+	 * MProduct(Env.getCtx(), einv_prod.getM_Product_ID(), null);
+	 * ln.setProduct(prod); ln.setC_Tax_ID(einv_prod.getC_Tax_ID()); } else if
+	 * (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) { MProduct prod = new
+	 * MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
+	 * ln.setProduct(prod); int taxId = inv.getInvoiceLines().stream().filter(il ->
+	 * il.getProduct().equals(prod)).findFirst().get() .getC_Tax_ID();
+	 * ln.setC_Tax_ID(taxId); } else { int taxId = inv.getTaxes(true)[0].get_ID();
+	 * ln.setC_Tax_ID(taxId); } ln.setQtyEntered(BigDecimal.ONE);
+	 * ln.setQtyInvoiced(BigDecimal.ONE); ln.saveEx(); inv.saveEx(); }
+	 * 
+	 * }
+	 */
 
 //	private void publishNewPendingInvoiceMessage(M_PendingInvoices inv) {
 //		MBroadcastMessage msg = new MBroadcastMessage(Env.getCtx(), 0, null);

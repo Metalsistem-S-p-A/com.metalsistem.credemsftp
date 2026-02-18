@@ -22,6 +22,7 @@ public class InvoiceReceived extends MInvoice {
 	private String withHoldingsNote = "";
 	private BigDecimal grandTotalXML = BigDecimal.ZERO;
 	private String errorMsg = "";
+	private String tipoDocumento = "";
 
 	public InvoiceReceived(Properties properties, int i, String copy) {
 		super(properties, i, copy);
@@ -86,6 +87,14 @@ public class InvoiceReceived extends MInvoice {
 
 	public void setWithHoldingsNote(String withHoldingsNote) {
 		this.withHoldingsNote = withHoldingsNote;
+	}
+
+	public String getTipoDocumento() {
+		return tipoDocumento;
+	}
+
+	public void setTipoDocumento(String tipoDocumento) {
+		this.tipoDocumento = tipoDocumento;
 	}
 
 }

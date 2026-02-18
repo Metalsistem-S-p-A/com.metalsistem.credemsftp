@@ -75,6 +75,8 @@ import net.schmizz.sshj.sftp.RemoteResourceInfo;
 import net.schmizz.sshj.sftp.SFTPClient;
 
 public class InvoiceParser {
+	public static final String TIPO_DOC_FEPA = "LIT_FEPA_DOCTYPE";
+
 	public static final String FATTURA_DUPLICATA = "Fattura già presente nel sistema";
 
 	private MBPartner bp = null;
@@ -102,8 +104,8 @@ public class InvoiceParser {
 	private static final String NATURA_LETTERA_INTENTO = "N3.5";
 
 	private static final CLogger log = CLogger.getCLogger(InvoiceParser.class);
-	private static final List<TipoDocumentoType> BANNED_DOCUMENT_TYPES = List.of(TipoDocumentoType.TD_04,
-			TipoDocumentoType.TD_16, TipoDocumentoType.TD_17, TipoDocumentoType.TD_18);
+//	private static final List<TipoDocumentoType> BANNED_DOCUMENT_TYPES = List.of(TipoDocumentoType.TD_04,
+//			TipoDocumentoType.TD_16, TipoDocumentoType.TD_17, TipoDocumentoType.TD_18);
 
 	public InvoiceParser() {
 		orgId = Env.getAD_Org_ID(Env.getCtx());
@@ -173,7 +175,8 @@ public class InvoiceParser {
 
 		invoice.setC_DocType_ID(docType.get_ID());
 		invoice.setC_DocTypeTarget_ID(docType.get_ID());
-		invoice.set_ValueOfColumn("LIT_FEPA_DOCTYPE", datiGeneraliDocumento.getTipoDocumento().value());
+		invoice.setTipoDocumento(datiGeneraliDocumento.getTipoDocumento().value());
+		invoice.set_ValueOfColumn(TIPO_DOC_FEPA, datiGeneraliDocumento.getTipoDocumento().value());
 
 		// TERMINI E MODALITA' PAGAMENTO TESTATA
 		invoice.setC_PaymentTerm_ID(mbp.getPO_PaymentTerm_ID());
@@ -248,6 +251,9 @@ public class InvoiceParser {
 					mbp);
 			il.setC_Tax_ID(invTax.get_ID());
 
+			if (linea.getNatura() != null && linea.getNatura().value().startsWith("N6"))
+				invoice.set_ValueOfColumn(TIPO_DOC_FEPA, TipoDocumentoType.TD_16.value());
+
 			if (invTax.getRate().compareTo(BigDecimal.ZERO) > 0) {
 				imponibile = imponibile.add(price);
 			}
@@ -315,7 +321,7 @@ public class InvoiceParser {
 		// ALLEGATI
 		List<MAttachmentEntry> allegati = new ArrayList<MAttachmentEntry>();
 		for (AllegatiType allegato : body.getAllegati()) {
-			String nome = allegato.getNomeAttachment();
+			String nome = allegato.getNomeAttachment().replace('/', '-');
 			byte[] content = allegato.getAttachment();
 			allegati.add(new MAttachmentEntry(nome, content));
 		}
@@ -461,7 +467,7 @@ public class InvoiceParser {
 				ips.setDiscountDate(scadenzaSconto);
 				// In caso non ci siano le date, queste vengono generate
 				// in idempiere al momento del completamento della fattura
-				
+
 				// CondizioniPagamentoType cpt = pagamento.getCondizioniPagamento();
 				// int pTerm = parsePaymentTermId(cpt.value());
 				// ips.set_ValueOfColumn("LIT_PaymentTermType",
@@ -482,7 +488,7 @@ public class InvoiceParser {
 			}
 		}
 		String checkPayment = scadenze.size() > 0 ? "Y" : "N";
-		invoice.set_ValueOfColumn("LIT_isNoCheckPaymentTerm", checkPayment);
+		invoice.set_ValueOfColumn(LIT_CHECK_PAYMENT_TERM, checkPayment);
 		return scadenze;
 	}
 
@@ -509,40 +515,11 @@ public class InvoiceParser {
 	 * @throws Exception if any required lookup (withholding type or tax) fails
 	 */
 	private String parseDatiRitenuta(BigDecimal imponibile, List<DatiRitenutaType> ritenute) throws Exception {
-//		List<MLCOInvoiceWithholding> acconti = new ArrayList<>();
 		StringBuilder notaRitenute = new StringBuilder();
 		for (DatiRitenutaType ritenuta : ritenute) {
-//			MLCOInvoiceWithholding acconto = new MLCOInvoiceWithholding(Env.getCtx(), 0, null);
-//			int typeId = DB.getSQLValue(null,
-//					"select lco_withholdingType_id from lco_withholdingType where LIT_WithHoldingTypeEInv  LIKE '%' || ? || '%'  and ad_client_id = ? "
-//							+ WHERE_ALL,
-//					ritenuta.getTipoRitenuta().value(), Env.getAD_Client_ID(Env.getCtx()));
-////			List<MTax> impostaRitenute = new Query(Env.getCtx(), MTax.Table_Name, "Name like 'Ritenuta%'", null)
-////					.setClient_ID().list();
-
 			BigDecimal aliquota = ritenuta.getAliquotaRitenuta().setScale(2, RoundingMode.HALF_DOWN);
-//
-//			String filtroRitenuta;
-//			if (aliquota.stripTrailingZeros().scale() == 0) {
-//				filtroRitenuta = aliquota.stripTrailingZeros().toPlainString();
-//			} else {
-//				filtroRitenuta = aliquota.setScale(2, RoundingMode.HALF_DOWN).toPlainString();
-//			}
-
-//			MTax imposta = impostaRitenute.stream().filter(tax -> {
-//				return tax.getName()
-//						.contains(filtroRitenuta+ "% A");
-//			}).findFirst().get();
-
 			notaRitenute.append("- Ritenuta ").append(aliquota).append("%: ").append(ritenuta.getImportoRitenuta())
 					.append(" \n");
-
-//			acconto.setLCO_WithholdingType_ID(typeId);
-//			acconto.setC_Tax_ID(imposta.get_ID());
-//			acconto.setTaxBaseAmt(imponibile);
-//			acconto.setTaxAmt(ritenuta.getImportoRitenuta());
-
-//			acconti.add(acconto);
 		}
 		return notaRitenute.toString();
 	}
@@ -701,7 +678,7 @@ public class InvoiceParser {
 			e.printStackTrace();
 			if (isNewBP) {
 				bp.delete(false);
-				log.warning("Errore parsing fattura, nuovo BP eliminato");
+				log.warning("Errore parsing fattura, nuovo BP eliminato: " + e.getLocalizedMessage());
 				inv.setErrorMsg("Errore durante la lettura della fattura");
 			}
 		}
@@ -1140,9 +1117,9 @@ public class InvoiceParser {
 		return new Query(Env.getCtx(), MTax.Table_Name, "IsActive = 'Y'" + WHERE_ALL, null).setClient_ID().list();
 	}
 
-	private boolean isBannedDocument(FatturaElettronicaBodyType body) {
-		return BANNED_DOCUMENT_TYPES.contains(body.getDatiGenerali().getDatiGeneraliDocumento().getTipoDocumento());
-	}
+//	private boolean isBannedDocument(FatturaElettronicaBodyType body) {
+//		return BANNED_DOCUMENT_TYPES.contains(body.getDatiGenerali().getDatiGeneraliDocumento().getTipoDocumento());
+//	}
 
 	private Timestamp toTimestamp(XMLGregorianCalendar calendar) {
 		return new Timestamp(calendar.toGregorianCalendar().getTimeInMillis());
