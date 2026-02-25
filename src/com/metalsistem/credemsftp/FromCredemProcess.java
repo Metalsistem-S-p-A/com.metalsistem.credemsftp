@@ -15,6 +15,8 @@
 package com.metalsistem.credemsftp;
 
 import java.io.FileOutputStream;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import org.adempiere.base.annotation.Process;
@@ -196,17 +198,24 @@ public class FromCredemProcess extends SvrProcess {
 	}
 
 	private void backupXml(RemoteResourceInfo entry, InvoiceReceived inv, byte[] xml, String err) {
-		M_PendingInvoices pendingInvoice = new M_PendingInvoices(Env.getCtx(), 0, null);
-		pendingInvoice.setName("Fattura: " + entry.getName());
-		pendingInvoice.setDescription(err);
-		pendingInvoice.saveEx();
+		String invName = "Fattura: " + entry.getName();
+		M_PendingInvoices pendingInvoice = new Query(Env.getCtx(), M_PendingInvoices.Table_Name, "Name = ?",
+				get_TrxName()).setParameters(invName).setClient_ID().first();
+		if (pendingInvoice == null) {
+			pendingInvoice = new M_PendingInvoices(Env.getCtx(), 0, get_TrxName());
+			pendingInvoice.setName(invName);
+			pendingInvoice.setDescription(err);
+			MAttachment allegato = new MAttachment(Env.getCtx(), M_PendingInvoices.Table_ID, pendingInvoice.get_ID(),
+					pendingInvoice.get_UUID(), get_TrxName());
+			MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(), xml);
+			allegato.addEntry(entryAllegato);
+			allegato.setRecord_ID(pendingInvoice.get_ID());
+			allegato.saveEx(get_TrxName());
+		}
+		pendingInvoice.setDescription(err.concat("\n\nOrario ultimo import: ")
+				.concat(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME).toString()));
+		pendingInvoice.saveEx(get_TrxName());
 		invoiceService.publishNewPendingInvoiceMessage(pendingInvoice);
-		MAttachment allegato = new MAttachment(Env.getCtx(), M_PendingInvoices.Table_ID, pendingInvoice.get_ID(),
-				pendingInvoice.get_UUID(), null);
-		MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(), xml);
-		allegato.addEntry(entryAllegato);
-		allegato.setRecord_ID(pendingInvoice.get_ID());
-		allegato.saveEx();
-		addLog("Fattura non importata" + entry.getName() + " errore: " + err);
+		addLog("Fattura non importata " + entry.getName() + " errore: " + err);
 	}
 }

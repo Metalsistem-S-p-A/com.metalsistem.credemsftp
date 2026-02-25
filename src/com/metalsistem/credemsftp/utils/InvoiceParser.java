@@ -247,18 +247,24 @@ public class InvoiceParser {
 			il.setDescription(linea.getDescrizione());
 			if (linea.getDescrizione().length() > 255)
 				il.set_ValueOfColumn("Help", linea.getDescrizione());
-			MTax invTax = getTax(registroIva, linea.getNatura(), linea.getAliquotaIVA(), linea.getPrezzoUnitario(),
-					mbp);
-			il.setC_Tax_ID(invTax.get_ID());
+			try {
+				MTax invTax = getTax(registroIva, linea.getNatura(), linea.getAliquotaIVA(), linea.getPrezzoUnitario(),
+						mbp);
+				il.setC_Tax_ID(invTax.get_ID());
+				if (invTax.getRate().compareTo(BigDecimal.ZERO) > 0) {
+					imponibile = imponibile.add(price);
+				}
+				il.setProduct(getProductByTax(invTax, mbp, TIPO_RIGA_DETTAGLIO_LINEE));
+			} catch (Exception e) {
+				// TODO: handle exception
+				invoice.setErrorMsg(e.getLocalizedMessage());
+				e.printStackTrace();
+				log.warning("Errore recupero imposta: " + e.getLocalizedMessage());
+			}
 
 			if (linea.getNatura() != null && linea.getNatura().value().startsWith("N6"))
 				invoice.set_ValueOfColumn(TIPO_DOC_FEPA, TipoDocumentoType.TD_16.value());
 
-			if (invTax.getRate().compareTo(BigDecimal.ZERO) > 0) {
-				imponibile = imponibile.add(price);
-			}
-
-			il.setProduct(getProductByTax(invTax, mbp, TIPO_RIGA_DETTAGLIO_LINEE));
 //			if (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) {
 //				MProduct prod = new MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
 //				il.setProduct(prod);
@@ -362,11 +368,16 @@ public class InvoiceParser {
 			il.setQtyEntered(BigDecimal.ONE);
 			il.setQtyInvoiced(BigDecimal.ONE);
 
-			MTax invTax = getTax(registroIva, riepilogo.getNatura(), riepilogo.getAliquotaIVA(),
-					riepilogo.getArrotondamento(), mbp);
-
-			il.setProduct(getProductByTax(invTax, mbp, TIPO_RIGA_ARROTONDAMENTO));
-			il.setC_Tax_ID(invTax.get_ID());
+			try {
+				MTax invTax = getTax(registroIva, riepilogo.getNatura(), riepilogo.getAliquotaIVA(),
+						riepilogo.getArrotondamento(), mbp);
+				il.setProduct(getProductByTax(invTax, mbp, TIPO_RIGA_ARROTONDAMENTO));
+				il.setC_Tax_ID(invTax.get_ID());
+			} catch (Exception e) {
+				invoice.setErrorMsg(e.getLocalizedMessage());
+				e.printStackTrace();
+				log.warning("Errore recupero imposta: " + e.getLocalizedMessage());
+			}
 			linee.add(il);
 		}
 		return linee;
@@ -399,12 +410,18 @@ public class InvoiceParser {
 			il.setPrice(dato.getImportoContributoCassa());
 			il.setName("Contributo previdenziale " + dato.getTipoCassa().value() + " " + dato.getAlCassa());
 			il.setDescription("Contributo previdenziale " + dato.getTipoCassa().value() + " " + dato.getAlCassa());
-			MTax invTax = getTax(registroIva, dato.getNatura(), dato.getAliquotaIVA(), dato.getImportoContributoCassa(),
-					mbp);
+			try {
+				MTax invTax = getTax(registroIva, dato.getNatura(), dato.getAliquotaIVA(),
+						dato.getImportoContributoCassa(), mbp);
 
-			il.setProduct(getProductByTax(invTax, mbp, TIPO_RIGA_DATI_CASSA));
+				il.setProduct(getProductByTax(invTax, mbp, TIPO_RIGA_DATI_CASSA));
 
-			il.setC_Tax_ID(invTax.get_ID());
+				il.setC_Tax_ID(invTax.get_ID());
+			} catch (Exception e) {
+				invoice.setErrorMsg(e.getLocalizedMessage());
+				e.printStackTrace();
+				log.warning("Errore recupero imposta: " + e.getLocalizedMessage());
+			}
 			linee.add(il);
 		}
 		return linee;
@@ -709,7 +726,7 @@ public class InvoiceParser {
 	 *         found
 	 */
 	private MTax getTax(final MLITVATDocTypeSequence registroIva, NaturaType natura, BigDecimal aliquota,
-			BigDecimal prezzo, MBPartner bp) {
+			BigDecimal prezzo, MBPartner bp) throws Exception {
 		Optional<MTax> res = null;
 		// Filtra in base alla natura
 		if (natura != null) {

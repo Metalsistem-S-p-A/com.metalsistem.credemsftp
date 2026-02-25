@@ -8,6 +8,7 @@ import org.adempiere.model.MBroadcastMessage;
 import org.compiere.model.MAttachment;
 import org.compiere.model.MAttachmentEntry;
 import org.compiere.model.MBPartner;
+import org.compiere.model.MClient;
 import org.compiere.model.MInvoice;
 import org.compiere.model.MInvoiceLine;
 import org.compiere.model.MInvoicePaySchedule;
@@ -18,6 +19,7 @@ import org.compiere.model.MWindow;
 import org.compiere.model.PO;
 import org.compiere.model.Query;
 import org.compiere.util.CLogger;
+import org.compiere.util.EMail;
 import org.compiere.util.Env;
 import org.idempiere.broadcast.BroadcastMsgUtil;
 
@@ -26,6 +28,7 @@ import com.metalsistem.credemsftp.model.M_PendingInvoices;
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
 
 public class InvoiceService {
+	private static final String PENDING_INVOICE_MSG = "LIT_MsNewPendingInvoice";
 	private static String WHERE_ORG;
 //	private static String WHERE_ORG_ALL;
 	private static final CLogger log = CLogger.getCLogger(InvoiceService.class);
@@ -151,87 +154,8 @@ public class InvoiceService {
 		return inv;
 	}
 
-	/*
-	 * private M_MsEinvProduct getProductArrotondamento(MBPartner mbp, String type)
-	 * { int einv_product_id = new Query(Env.getCtx(), M_MsEinvProduct.Table_Name,
-	 * "IsActive = 'Y' AND LIT_MsEinvProdType = ? AND C_BPartner_ID = ?" +
-	 * WHERE_ORG, null) .setParameters(type, mbp.get_ID()).setClient_ID().firstId();
-	 * 
-	 * if (einv_product_id > 0) { return new M_MsEinvProduct(Env.getCtx(),
-	 * einv_product_id, null); } return null; }
-	 */
-
-	/*
-	 * private void checkTotal(InvoiceReceived inv) { MInvoice invDb = new
-	 * MInvoice(Env.getCtx(), inv.get_ID(), null);
-	 * 
-	 * BigDecimal xml = inv.getGrandTotalXML(); BigDecimal saved =
-	 * invDb.getGrandTotal(); BigDecimal diff = xml.subtract(saved);
-	 * 
-	 * if (diff.compareTo(BigDecimal.ZERO) != 0) { MBPartner mbp = new
-	 * MBPartner(Env.getCtx(), inv.getC_BPartner_ID(), null); MInvoiceLine ln = new
-	 * MInvoiceLine(inv); ln.setName("Arrotondamento totale");
-	 * ln.setDescription("Arrotondamento totale"); ln.setPrice(diff);
-	 * 
-	 * M_MsEinvProduct einv_prod = getProductArrotondamento(mbp,
-	 * "ArrotondamentoIdempiere"); if (einv_prod != null) { MProduct prod = new
-	 * MProduct(Env.getCtx(), einv_prod.getM_Product_ID(), null);
-	 * ln.setProduct(prod); ln.setC_Tax_ID(einv_prod.getC_Tax_ID()); } else if
-	 * (mbp.get_ValueAsInt("LIT_M_Product_XML_ID") > 0) { MProduct prod = new
-	 * MProduct(Env.getCtx(), mbp.get_ValueAsInt("LIT_M_Product_XML_ID"), null);
-	 * ln.setProduct(prod); int taxId = inv.getInvoiceLines().stream().filter(il ->
-	 * il.getProduct().equals(prod)).findFirst().get() .getC_Tax_ID();
-	 * ln.setC_Tax_ID(taxId); } else { int taxId = inv.getTaxes(true)[0].get_ID();
-	 * ln.setC_Tax_ID(taxId); } ln.setQtyEntered(BigDecimal.ONE);
-	 * ln.setQtyInvoiced(BigDecimal.ONE); ln.saveEx(); inv.saveEx(); }
-	 * 
-	 * }
-	 */
-
-//	private void publishNewPendingInvoiceMessage(M_PendingInvoices inv) {
-//		MBroadcastMessage msg = new MBroadcastMessage(Env.getCtx(), 0, null);
-//		MRole role = new Query(Env.getCtx(), MRole.Table_Name, "name = 'Amministrazione'", null).setClient_ID().first();
-//		if (role == null) {
-//			role = new Query(Env.getCtx(), MRole.Table_Name, "name like 'Amministratore%'", null).setClient_ID()
-//					.first();
-//		}
-//		int winUUID = Env.getZoomWindowID(M_PendingInvoices.Table_ID, inv.get_ID());
-//		MWindow window = MWindow.get(winUUID);
-//		msg.setBroadcastMessage(
-//				Utils.getMessage("LIT_MsNewPendingInvoice", msg.getUrlZoom(inv, window.get_UUID(), inv.getName())));
-//		msg.setBroadcastType(MBroadcastMessage.BROADCASTTYPE_ImmediatePlusLogin);
-//		msg.setBroadcastFrequency(MBroadcastMessage.BROADCASTFREQUENCY_UntilExpirationOrAcknowledge);
-//		msg.setTarget(MBroadcastMessage.TARGET_Role);
-//		msg.setAD_Role_ID(role.get_ID());
-//		msg.setPublish("Y");
-//		msg.setExpiration(Timestamp.valueOf(LocalDateTime.now().plusMonths(1)));
-//		msg.saveEx();
-//		BroadcastMsgUtil.publishBroadcastMessage(msg.get_ID(), null);
-//	}
-//	
-//	private void publishNewBpMessage(MBPartner mbp) {
-//		MBroadcastMessage msg = new MBroadcastMessage(Env.getCtx(), 0, null);
-//		MRole role = new Query(Env.getCtx(), MRole.Table_Name, "name = 'Amministrazione'", null).setClient_ID().first();
-//		if (role == null) {
-//			role = new Query(Env.getCtx(), MRole.Table_Name, "name like 'Amministratore%'", null).setClient_ID()
-//					.first();
-//		}
-//		int winUUID = Env.getZoomWindowID(MBPartner.Table_ID, mbp.get_ID());
-//		MWindow bpWindow = MWindow.get(winUUID);
-//		msg.setBroadcastMessage(
-//				Utils.getMessage("LIT_MsInfoBPCreated", msg.getUrlZoom(mbp, bpWindow.get_UUID(), mbp.getName())));
-//		msg.setBroadcastType(MBroadcastMessage.BROADCASTTYPE_ImmediatePlusLogin);
-//		msg.setBroadcastFrequency(MBroadcastMessage.BROADCASTFREQUENCY_UntilExpirationOrAcknowledge);
-//		msg.setTarget(MBroadcastMessage.TARGET_Role);
-//		msg.setAD_Role_ID(role.get_ID());
-//		msg.setPublish("Y");
-//		msg.setExpiration(Timestamp.valueOf(LocalDateTime.now().plusMonths(1)));
-//		msg.saveEx();
-//		BroadcastMsgUtil.publishBroadcastMessage(msg.get_ID(), null);
-//	}
-//	
 	public void publishNewPendingInvoiceMessage(M_PendingInvoices inv) {
-		publishBroadcastMessage(inv, M_PendingInvoices.Table_ID, "LIT_MsNewPendingInvoice", inv.getName(),
+		publishBroadcastMessage(inv, M_PendingInvoices.Table_ID, PENDING_INVOICE_MSG, inv.getName(),
 				getAdminClientRole());
 	}
 
@@ -247,7 +171,8 @@ public class InvoiceService {
 		int winUUID = Env.getZoomWindowID(tableId, model.get_ID());
 		MWindow window = MWindow.get(winUUID);
 
-		msg.setBroadcastMessage(Utils.getMessage(messageKey, msg.getUrlZoom(model, window.get_UUID(), recordName)));
+		String msgBody = Utils.getMessage(messageKey, msg.getUrlZoom(model, window.get_UUID(), recordName));
+		msg.setBroadcastMessage(msgBody);
 		msg.setBroadcastType(MBroadcastMessage.BROADCASTTYPE_ImmediatePlusLogin);
 		msg.setBroadcastFrequency(MBroadcastMessage.BROADCASTFREQUENCY_UntilExpirationOrAcknowledge);
 		msg.setTarget(MBroadcastMessage.TARGET_Role);
@@ -255,6 +180,14 @@ public class InvoiceService {
 		msg.setPublish("Y");
 		msg.setExpiration(Timestamp.valueOf(LocalDateTime.now().plusMonths(1)));
 		msg.saveEx();
+
+		if (PENDING_INVOICE_MSG.equals(messageKey)) {
+			M_PendingInvoices inv = (M_PendingInvoices) model;
+			String mailMsg = "Errore nella fase di import della ".concat(inv.getName()).concat("\n\n")
+					.concat(inv.getDescription());
+			new EMail(MClient.get(Env.getAD_Client_ID(Env.getCtx())), "credemsftp@metalsistem.com",
+					"notificheidempiere@metalsistem.com", "Credemsftp fattura non importata", mailMsg).send();
+		}
 
 		BroadcastMsgUtil.publishBroadcastMessage(msg.get_ID(), null);
 	}
@@ -269,8 +202,8 @@ public class InvoiceService {
 	}
 
 	private MRole getAdminClientRole() {
-		MRole role = new Query(Env.getCtx(), MRole.Table_Name, "name = 'Amministratore client'", null).setClient_ID()
-				.first();
+		MRole role = new Query(Env.getCtx(), MRole.Table_Name, "name ilike 'Amministratore client'", null)
+				.setClient_ID().first();
 		return role;
 	}
 
