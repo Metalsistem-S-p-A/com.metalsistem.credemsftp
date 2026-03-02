@@ -178,7 +178,7 @@ public class InvoiceService {
 		msg.setTarget(MBroadcastMessage.TARGET_Role);
 		msg.setAD_Role_ID(role.get_ID());
 		msg.setPublish("Y");
-		msg.setExpiration(Timestamp.valueOf(LocalDateTime.now().plusMonths(1)));
+		msg.setExpiration(Timestamp.valueOf(LocalDateTime.now().plusDays(7)));
 		msg.saveEx();
 
 		if (PENDING_INVOICE_MSG.equals(messageKey)) {
