@@ -15,6 +15,7 @@
 package com.metalsistem.credemsftp;
 
 import java.io.ByteArrayOutputStream;
+import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
@@ -28,12 +29,14 @@ import org.adempiere.base.annotation.Process;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
 import org.compiere.model.MBPartner;
+import org.compiere.model.MClient;
 import org.compiere.model.MDocType;
 import org.compiere.model.MInvoice;
 import org.compiere.model.MSysConfig;
 import org.compiere.model.Query;
 import org.compiere.process.ProcessInfoParameter;
 import org.compiere.process.SvrProcess;
+import org.compiere.util.EMail;
 import org.compiere.util.Env;
 
 import com.metalsistem.credemsftp.utils.SftpFile;
@@ -211,10 +214,23 @@ public class ToCredemProcess extends SvrProcess {
 						.setClient_ID()
 						.list();
 				for (MInvoice i : soInvoices) {
-					FEPAOperations fepa = new FEPAOperations(getCtx(), getAD_Client_ID(), i.getAD_Org_ID(), get_TrxName(), false, false);
-					List<MInvoice> t = new ArrayList<MInvoice>();
-					t.add(i);
-					fepa.createFile(t);
+					try {
+						FEPAOperations fepa = new FEPAOperations(getCtx(), getAD_Client_ID(), i.getAD_Org_ID(), get_TrxName(), false, false);
+						List<MInvoice> t = new ArrayList<MInvoice>();
+						t.add(i);
+						fepa.createFile(t);
+					}
+					catch(Exception e) {
+						StringWriter swriter = new StringWriter();
+						PrintWriter pw = new PrintWriter(swriter);
+						e.printStackTrace(pw);
+						String stack = pw.toString();
+						pw.close();
+						swriter.close();
+						new EMail(MClient.get(Env.getAD_Client_ID(Env.getCtx())), "credemsftp@metalsistem.com",
+								"notificheidempiere@metalsistem.com", "Errore creazione xml fattura", stack).send();
+						log.severe("Error generating XML for invoice " + i.getDocumentNo() + ": " + e.getMessage());
+					}
 				}
 			}
 
