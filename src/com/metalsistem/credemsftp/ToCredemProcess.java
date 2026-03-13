@@ -45,32 +45,40 @@ import net.schmizz.sshj.sftp.SFTPClient;
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
 
 /**
- * @author jtomelleri
+ * Handles the process of exporting invoices to Credemtel via SFTP.
  * 
- *         This class handles the process of exporting invoices to Credemtel via
- *         SFTP. It generates CSV files for PO invoices and ZIP files containing
- *         XML for SO invoices. The files are then uploaded to a specified SFTP
- *         server.
+ * <p>
+ * This class generates CSV files for PO invoices and ZIP files containing XML 
+ * for SO invoices, which are then uploaded to a specified SFTP server.
+ * </p>
  *
- *         <p>
- *         Key functionalities of this class include: - Reading invoice data
- *         from the database. - Generating CSV and ZIP files based on invoice
- *         data. - Uploading generated files to a remote SFTP server. - Marking
- *         invoices as synchronized once processed and uploaded.
+ * <h2>Key Functionalities:</h2>
+ * <ul>
+ *   <li>Reading invoice data from the database</li>
+ *   <li>Generating CSV and ZIP files based on invoice data</li>
+ *   <li>Uploading generated files to a remote SFTP server</li>
+ *   <li>Marking invoices as synchronized after processing</li>
+ * </ul>
  *
- *         <p>
- *         Parameters that can be configured for this process: - SftpAddress:
- *         Address of the SFTP server. - CertificateFingerprint: Fingerprint of
- *         the certificate used for SSH authentication. - Username: Username for
- *         the SFTP server. - Password: Password for the SFTP server. -
- *         SftpPort: Port number for the SFTP server. - SiaCode: Identifier used
- *         for naming the files. - CsvIdentifier: Identifier for CSV file
- *         naming. - ZipIdentifier: Identifier for ZIP file naming. - Path: Path
- *         on the SFTP server where files will be uploaded.
+ * <h2>Configurable Parameters:</h2>
+ * <ul>
+ *   <li><b>SftpAddress:</b> Address of the SFTP server</li>
+ *   <li><b>CertificateFingerprint:</b> Fingerprint of the certificate for SSH authentication</li>
+ *   <li><b>Username:</b> Username for the SFTP server</li>
+ *   <li><b>Password:</b> Password for the SFTP server</li>
+ *   <li><b>SftpPort:</b> Port number for SFTP connection</li>
+ *   <li><b>SiaCode:</b> Identifier used for file naming</li>
+ *   <li><b>CsvIdentifier:</b> Identifier for CSV file naming</li>
+ *   <li><b>ZipIdentifier:</b> Identifier for ZIP file naming</li>
+ *   <li><b>Path:</b> Path on the SFTP server where files will be uploaded</li>
+ * </ul>
  *
- *         <p>
- *         Note: The process ensures data consistency by marking synchronized
- *         invoices in the database to avoid duplicate processing.
+ * <p>
+ * <b>Important Note:</b> The process ensures data consistency by marking 
+ * synchronized invoices in the database to prevent duplicate processing.
+ * </p>
+ *
+ * @author jtomelleri
  */
 @Process
 public class ToCredemProcess extends SvrProcess {
@@ -84,6 +92,7 @@ public class ToCredemProcess extends SvrProcess {
 	private String path;
 
 	private Integer port;
+	private int oreOffset = 0;
 
 	@Override
 	protected void prepare() {
@@ -106,6 +115,8 @@ public class ToCredemProcess extends SvrProcess {
 				csvIdentifier = param.getParameterAsString();
 			} else if ("ZipIdentifier".equals(name)) {
 				zipIdentifier = param.getParameterAsString();
+			} else if ("OreOffset".equals(name)) {
+				oreOffset = param.getParameterAsInt();
 			} else if ("Path".equals(name)) {
 				path = param.getParameterAsString();
 				if (!path.endsWith("/")) {
@@ -131,13 +142,12 @@ public class ToCredemProcess extends SvrProcess {
 			// CSV
 			List<MInvoice> poInvoices = new Query(getCtx(), MInvoice.Table_Name,
 					"isSoTrx='N' AND DocStatus = 'CO' AND isActive='Y' AND DateAcct < CURRENT_DATE - 1 AND AD_Org_ID = "
-							+ orgId
-							+ " and c_invoice_id in (select c_invoice_id from lit_einvoice le where le.lit_mssynccredem = 'N' AND AD_Org_ID = "
-							+ orgId + " )",
+					+ orgId
+					+ " and c_invoice_id in (select c_invoice_id from lit_einvoice le where le.lit_mssynccredem = 'N' AND AD_Org_ID = "
+					+ orgId + " )",
 					null).setClient_ID().list();
 
 			String dataOra = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-
 
 			StringWriter sw = new StringWriter();
 			CSVFormat csvFormat = CSVFormat.DEFAULT.builder().setDelimiter(';').build();
@@ -191,8 +201,9 @@ public class ToCredemProcess extends SvrProcess {
 						+ "AND dt.LIT_FEPA_DOCTYPE IS NOT NULL "
 						+ "AND le.C_Invoice_ID IS NULL "
 						+ "AND C.LIT_FEPA_IPA IS NOT NULL "
+						+ "AND C_Invoice.updated < ? "
 						+ "AND C_Invoice.AD_Org_ID = ? ", null)
-						.setParameters(Env.getAD_Org_ID(getCtx()))
+						.setParameters(Timestamp.valueOf(LocalDateTime.now().minusHours(oreOffset)),Env.getAD_Org_ID(getCtx()))
 						.addJoinClause("LEFT JOIN C_DocType dt ON dt.C_DocType_ID=C_Invoice.C_DocTypeTarget_ID")
 						.addJoinClause("LEFT JOIN LIT_EInvoice le ON le.C_Invoice_ID=C_Invoice.C_Invoice_ID")
 						.addJoinClause("LEFT JOIN C_BPartner c ON c.C_BPartner_ID=C_Invoice.C_BPartner_ID")
@@ -212,8 +223,9 @@ public class ToCredemProcess extends SvrProcess {
 					"LIT_MsSyncCredem='N' "
 					+ "AND inv.isActive='Y' "
 					+ "AND inv.isSOTrx='Y' "
-					+ "AND inv.AD_Org_ID = ?", null)
-					.setParameters(Env.getAD_Org_ID(getCtx()))
+					+ "AND inv.AD_Org_ID = ? "
+					+ "AND inv.updated < ?", null)
+					.setParameters(Env.getAD_Org_ID(getCtx()),Timestamp.valueOf(LocalDateTime.now().minusHours(oreOffset)))
 					.addJoinClause("join c_invoice inv on inv.c_invoice_id = lit_einvoice.c_invoice_id")
 					.setClient_ID()
 					.list();

@@ -42,6 +42,7 @@ import org.compiere.model.MTax;
 import org.compiere.model.MUOM;
 import org.compiere.model.Query;
 import org.compiere.util.CLogger;
+import org.compiere.util.DB;
 import org.compiere.util.Env;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
@@ -163,6 +164,11 @@ public class InvoiceParser {
 			mbp = findOrCreateBPartner(fattura);
 		}
 
+		String sql = "SELECT M_PriceList_ID FROM M_PriceList WHERE AD_Client_ID=? AND AD_Org_ID =? AND IsSOPriceList='N' AND IsActive='Y' ORDER BY IsDefault DESC";
+		int listinoPrezzi = DB.getSQLValue(null, sql, Env.getAD_Client_ID(Env.getCtx()),
+				Env.getAD_Org_ID(Env.getCtx()));
+
+		invoice.setM_PriceList_ID(listinoPrezzi);
 		invoice.setIsSOTrx(false);
 		invoice.setAD_Org_ID(orgId);
 		invoice.setDocumentNo(datiGeneraliDocumento.getNumero());
@@ -475,9 +481,9 @@ public class InvoiceParser {
 				Timestamp scadenzaSconto = dettaglio.getDataLimitePagamentoAnticipato() != null
 						? new Timestamp(
 								dettaglio.getDataLimitePagamentoAnticipato().toGregorianCalendar().getTimeInMillis())
-						: null;
+						: scadenza;
 
-				if (scadenza == null || scadenzaSconto == null)
+				if (scadenza == null)
 					continue;
 
 				ips.setDueDate(scadenza);
