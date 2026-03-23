@@ -36,6 +36,7 @@ public class ManualImportProcess extends SvrProcess {
 
 	@Override
 	protected String doIt() throws Exception {
+		String trxName = get_TrxName();
 		if (Env.getAD_Org_ID(getCtx()) <= 0)
 			return Utils.getMessage("LIT_MsErrorOrgNotSelected");
 
@@ -46,8 +47,8 @@ public class ManualImportProcess extends SvrProcess {
 		byte[] parsedData = invoiceParser.getXml(data);
 		InvoiceReceived inv = invoiceParser.getInvoiceFromXml(parsedData);
 		if (inv.getErrorMsg().isBlank()) {
-			inv = invoiceService.saveInvoice(inv);
-			invoiceService.archiveEInvoice(parsedData, inv);
+			inv = invoiceService.saveInvoice(inv, trxName);
+			invoiceService.archiveEInvoice(parsedData, inv, trxName);
 		} else if (InvoiceParser.FATTURA_DUPLICATA.equals(inv.getErrorMsg())) {
 			log.warning(InvoiceParser.FATTURA_DUPLICATA);
 			addLog("Fattura " + inv.getDocumentNo() + " già presente nel sistema ");

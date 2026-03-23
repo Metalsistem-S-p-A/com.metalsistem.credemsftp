@@ -2,8 +2,10 @@ package com.metalsistem.credemsftp.utils;
 
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.model.MBroadcastMessage;
 import org.compiere.model.MAttachment;
 import org.compiere.model.MAttachmentEntry;
@@ -26,6 +28,7 @@ import org.idempiere.broadcast.BroadcastMsgUtil;
 import com.metalsistem.credemsftp.model.M_PendingInvoices;
 
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
+import net.schmizz.sshj.sftp.RemoteResourceInfo;
 
 public class InvoiceService {
 	private static final String PENDING_INVOICE_MSG = "LIT_MsNewPendingInvoice";
@@ -39,15 +42,15 @@ public class InvoiceService {
 //		WHERE_ORG_ALL = " AND AD_Org_ID IN(0, " + orgId + ",) ";
 	}
 
-	public void archiveEInvoice(byte[] xml, InvoiceReceived inv) {
+	public void archiveEInvoice(byte[] xml, InvoiceReceived inv, String trxName) {
 		String noDocFile = inv.getDocumentNo().replaceAll("/", "-");
 		String nomeEinv = noDocFile + "_" + inv.getC_BPartner_ID();
 		String nomeRecord = noDocFile + "_" + inv.getC_BPartner().getName();
 		String nomeDoc = "FE: " + nomeRecord;
-		ME_Invoice einv = new Query(Env.getCtx(), ME_Invoice.Table_Name, "Name = ?" + WHERE_ORG, null).setClient_ID()
+		ME_Invoice einv = new Query(Env.getCtx(), ME_Invoice.Table_Name, "Name = ?" + WHERE_ORG, trxName).setClient_ID()
 				.setParameters(nomeDoc).first();
 		if (einv == null) {
-			einv = new ME_Invoice(Env.getCtx(), 0, null);
+			einv = new ME_Invoice(Env.getCtx(), 0, trxName);
 			einv.setBinaryData(xml);
 			einv.setName(nomeDoc);
 			einv.setC_DocType_ID(inv.getDocTypeID());
@@ -57,16 +60,16 @@ public class InvoiceService {
 			einv.setDateInvoiced(inv.getDateInvoiced());
 			einv.set_ValueOfColumn("LIT_MsSyncCredem", false);
 			einv.set_ValueOfColumn(InvoiceParser.TIPO_DOC_FEPA, inv.getTipoDocumento());
-			einv.saveEx();
+			einv.saveEx(trxName);
 
-			MAttachment attachment = new MAttachment(Env.getCtx(), 0, null);
+			MAttachment attachment = new MAttachment(Env.getCtx(), 0, trxName);
 			attachment.setRecord_ID(einv.get_ID());
 			attachment.setAD_Table_ID(ME_Invoice.Table_ID);
 			byte[] pdfBytes = {};
 			try {
 				PdfUtils utils = new PdfUtils();
 				MAttachment procAttachments = new MAttachment(Env.getCtx(), MProcess.Table_ID, einv.get_ID(),
-						einv.get_UUID(), null);
+						einv.get_UUID(), trxName);
 				List<MAttachmentEntry> pdfAttachment = List.of(procAttachments.getEntries());
 				MAttachmentEntry pdfStyle = pdfAttachment.stream()
 						.filter(att -> att.getFile().getName().endsWith(".xsl")).findFirst().orElse(null);
@@ -78,7 +81,7 @@ public class InvoiceService {
 					entry.setData(pdfBytes);
 
 					attachment.addEntry(entry);
-					attachment.save(null);
+					attachment.saveEx(trxName);
 				}
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -86,28 +89,30 @@ public class InvoiceService {
 		}
 	}
 
-	public InvoiceReceived saveInvoice(InvoiceReceived inv) throws Exception {
+	public InvoiceReceived saveInvoice(InvoiceReceived inv, String trxName) throws Exception {
 		/*
 		 * NOTA: Controllo già eseguito in fase di parsing, a questo punto del codice la
 		 * fattura dovrebbe essere sempre nuova. Ma non si sa mai...
 		 */
 		MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
-				"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG, null).setClient_ID()
+				"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG, trxName).setClient_ID()
 				.setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced()).first();
+
 		if (res == null) {
 			StringBuilder nota = new StringBuilder();
 
 			nota.append(inv.getWithHoldingsNote());
-			MBPartner bp = new MBPartner(Env.getCtx(), inv.getC_BPartner_ID(), null);
+			MBPartner bp = new MBPartner(Env.getCtx(), inv.getC_BPartner_ID(), trxName);
 			try {
-				inv.saveEx();
+				inv.saveEx(trxName);
 				if (InvoiceParser.getIsNewBP()) {
 					publishNewBpMessage(bp);
 				}
 			} catch (Exception e) {
 				if (InvoiceParser.getIsNewBP()) {
-					bp.deleteEx(false);
+					bp.deleteEx(false,trxName);
 				}
+				throw new AdempiereException("Errore salvataggio MInvoice",e);
 			}
 			log.info("Fattura importata");
 
@@ -115,7 +120,7 @@ public class InvoiceService {
 //			boolean newLine = true;
 			for (MInvoiceLine l : inv.getInvoiceLines()) {
 				l.setC_Invoice_ID(inv.get_ID());
-				l.saveEx();
+				l.saveEx(trxName);
 //				if (l.getPriceEntered().compareTo(BigDecimal.ZERO) == 0) {
 //					notaDescrizione.append(l.getDescription()).append(" ");
 //					newLine = true;
@@ -129,19 +134,19 @@ public class InvoiceService {
 			log.info("Linee Fattura importate");
 
 			inv.set_ValueOfColumn("Note", nota.toString());
-			inv.saveEx();
-			MAttachment attachment = new MAttachment(Env.getCtx(), 0, null);
+			inv.saveEx(trxName);
+			MAttachment attachment = new MAttachment(Env.getCtx(), 0, trxName);
 			attachment.setRecord_ID(inv.get_ID());
 			attachment.setAD_Table_ID(MInvoice.Table_ID);
 			for (MAttachmentEntry a : inv.getAttachmentEntries()) {
 				attachment.addEntry(a);
-				attachment.saveEx(null);
+				attachment.saveEx(trxName);
 			}
 			log.info("Allegati Fattura importati");
 
 			for (MInvoicePaySchedule s : inv.getScheduledPayments()) {
 				s.setC_Invoice_ID(inv.get_ID());
-				s.saveEx();
+				s.saveEx(trxName);
 			}
 			log.info("Scadenze Fattura importate");
 
@@ -154,6 +159,32 @@ public class InvoiceService {
 		return inv;
 	}
 
+	
+	public void backupXml(RemoteResourceInfo entry, InvoiceReceived inv, byte[] xml, String err, String trxName) {
+		String invName = "Fattura: " + entry.getName();
+		M_PendingInvoices pendingInvoice = new Query(Env.getCtx(), M_PendingInvoices.Table_Name, "Name = ?",
+				trxName).setParameters(invName).setClient_ID().first();
+		if (pendingInvoice == null) {
+			pendingInvoice = new M_PendingInvoices(Env.getCtx(), 0, trxName);
+			pendingInvoice.setName(invName);
+			pendingInvoice.setDescription(err);
+			pendingInvoice.saveEx(trxName);
+			MAttachment allegato = new MAttachment(Env.getCtx(), M_PendingInvoices.Table_ID, pendingInvoice.get_ID(),
+					pendingInvoice.get_UUID(), trxName);
+			MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(), xml);
+			allegato.addEntry(entryAllegato);
+			allegato.setRecord_ID(pendingInvoice.get_ID());
+			allegato.saveEx(trxName);
+		}
+		pendingInvoice.setDescription(err.concat("\n\nOrario ultimo import: ")
+				.concat(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME).toString()));
+		pendingInvoice.saveEx(trxName);
+		publishNewPendingInvoiceMessage(pendingInvoice);
+		log.warning("Fattura non importata " + entry.getName() + " errore: " + err);
+	}
+	
+	
+	
 	public void publishNewPendingInvoiceMessage(M_PendingInvoices inv) {
 		publishBroadcastMessage(inv, M_PendingInvoices.Table_ID, PENDING_INVOICE_MSG, inv.getName(),
 				getAdminClientRole());

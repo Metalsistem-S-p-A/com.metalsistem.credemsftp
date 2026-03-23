@@ -15,20 +15,15 @@
 package com.metalsistem.credemsftp;
 
 import java.io.FileOutputStream;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import org.adempiere.base.annotation.Process;
-import org.compiere.model.MAttachment;
-import org.compiere.model.MAttachmentEntry;
 import org.compiere.model.Query;
 import org.compiere.process.ProcessInfoParameter;
 import org.compiere.process.SvrProcess;
 import org.compiere.util.Env;
 
 import com.metalsistem.credemsftp.model.M_EsitoCredem;
-import com.metalsistem.credemsftp.model.M_PendingInvoices;
 import com.metalsistem.credemsftp.utils.InvoiceParser;
 import com.metalsistem.credemsftp.utils.InvoiceReceived;
 import com.metalsistem.credemsftp.utils.InvoiceService;
@@ -111,7 +106,7 @@ public class FromCredemProcess extends SvrProcess {
 
 	@Override
 	protected String doIt() throws Exception {
-
+		String trxName = get_TrxName();
 		try (final SSHClient ssh = new SSHClient()) {
 			if ("test".equals(certificateFingerprint)) {
 				ssh.addHostKeyVerifier(new PromiscuousVerifier());
@@ -140,29 +135,28 @@ public class FromCredemProcess extends SvrProcess {
 						log.warning("Error parsing XML: " + e.getMessage());
 						log.warning("Skipping invoice... ");
 						addLog("Error parsing XML: " + e.getMessage());
-					}
-					if (xml == null)
 						continue;
+					}
 					inv = invoiceParser.getInvoiceFromXml(xml);
 					if (inv.getErrorMsg().isBlank()) {
 						try {
-							inv = invoiceService.saveInvoice(inv);
+							inv = invoiceService.saveInvoice(inv, trxName);
 							if (inv.get_ID() > 0) {
 								importedInvoices++;
-								invoiceService.archiveEInvoice(xml, inv);
+								invoiceService.archiveEInvoice(xml, inv, trxName);
 								sftp.rm(entry.getPath());
 							}
 						} catch (Exception e) {
 							log.warning("Fattura non importata, errore durante il salvataggio");
 							e.printStackTrace();
-							backupXml(entry, inv, xml, e.getMessage());
+							invoiceService.backupXml(entry, inv, xml, e.getMessage(), trxName);
 						}
 					} else if (InvoiceParser.FATTURA_DUPLICATA.equals(inv.getErrorMsg())) {
 						log.warning(InvoiceParser.FATTURA_DUPLICATA);
 						addLog("Fattura " + entry.getName() + " già presente nel sistema ");
 						sftp.rm(entry.getPath());
 					} else {
-						backupXml(entry, inv, xml, inv.getErrorMsg());
+						invoiceService.backupXml(entry, inv, xml, inv.getErrorMsg(), trxName);
 					}
 				} else if (parts[0].length() >= 16 && credemId.contains(parts[0].substring(10, 15))) {
 					// ELABORO ESITO
@@ -171,13 +165,13 @@ public class FromCredemProcess extends SvrProcess {
 						List<M_EsitoCredem> esiti = invoiceParser.getDatiEsito(xml);
 						for (M_EsitoCredem esito : esiti) {
 							ME_Invoice einv = new Query(getCtx(), ME_Invoice.Table_Name,
-									"LIT_MsSyncCredem='Y' AND inv.VATDocumentNo = ?  AND inv.isSOTrx='Y' ", null)
+									"LIT_MsSyncCredem='Y' AND inv.VATDocumentNo = ?  AND inv.isSOTrx='Y' ", trxName)
 									.setParameters(esito.getDocumentNo())
 									.addJoinClause("join c_invoice inv on inv.c_invoice_id = lit_einvoice.c_invoice_id")
 									.setClient_ID().first();
 							if (einv != null) {
 								esito.setLIT_EInvoice_ID(einv.get_ID());
-								esito.saveEx();
+								esito.saveEx(trxName);
 							}
 						}
 					} catch (Exception e) {
@@ -197,25 +191,5 @@ public class FromCredemProcess extends SvrProcess {
 		}
 	}
 
-	private void backupXml(RemoteResourceInfo entry, InvoiceReceived inv, byte[] xml, String err) {
-		String invName = "Fattura: " + entry.getName();
-		M_PendingInvoices pendingInvoice = new Query(Env.getCtx(), M_PendingInvoices.Table_Name, "Name = ?",
-				get_TrxName()).setParameters(invName).setClient_ID().first();
-		if (pendingInvoice == null) {
-			pendingInvoice = new M_PendingInvoices(Env.getCtx(), 0, get_TrxName());
-			pendingInvoice.setName(invName);
-			pendingInvoice.setDescription(err);
-			MAttachment allegato = new MAttachment(Env.getCtx(), M_PendingInvoices.Table_ID, pendingInvoice.get_ID(),
-					pendingInvoice.get_UUID(), get_TrxName());
-			MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(), xml);
-			allegato.addEntry(entryAllegato);
-			allegato.setRecord_ID(pendingInvoice.get_ID());
-			allegato.saveEx(get_TrxName());
-		}
-		pendingInvoice.setDescription(err.concat("\n\nOrario ultimo import: ")
-				.concat(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME).toString()));
-		pendingInvoice.saveEx(get_TrxName());
-		invoiceService.publishNewPendingInvoiceMessage(pendingInvoice);
-		addLog("Fattura non importata " + entry.getName() + " errore: " + err);
-	}
+	
 }

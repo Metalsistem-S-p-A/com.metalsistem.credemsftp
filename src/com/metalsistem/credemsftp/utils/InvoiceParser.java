@@ -146,7 +146,6 @@ public class InvoiceParser {
 		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name,
 				"? in (LIT_taxID, LIT_NationalIDNumber_ID) " + WHERE_ORG_ALL, null).setClient_ID().setParameters(codice)
 				.first();
-
 		if (mbp != null) {
 			MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
 					"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG, null).setClient_ID()
@@ -161,7 +160,11 @@ public class InvoiceParser {
 			}
 		} else {
 			// BUSINESS PARTNER
-			mbp = findOrCreateBPartner(fattura);
+			mbp = createBPartner(fattura);
+		}
+		if (!mbp.isVendor()) {
+			mbp.setIsVendor(true);
+			mbp.saveEx();
 		}
 
 		String sql = "SELECT M_PriceList_ID FROM M_PriceList WHERE AD_Client_ID=? AND AD_Org_ID =? AND IsSOPriceList='N' AND IsActive='Y' ORDER BY IsDefault DESC";
@@ -185,10 +188,7 @@ public class InvoiceParser {
 		invoice.set_ValueOfColumn(TIPO_DOC_FEPA, datiGeneraliDocumento.getTipoDocumento().value());
 
 		// TERMINI E MODALITA' PAGAMENTO TESTATA
-		invoice.setC_PaymentTerm_ID(mbp.getPO_PaymentTerm_ID());
-		invoice.setPaymentRule(mbp.getPaymentRulePO());
-		invoice.setBPartner(mbp);
-		invoice.setC_BPartner_ID(mbp.get_ID());
+		setPaymentDetails(invoice, mbp);
 
 		// LOCATION
 		MBPartnerLocation mbpLocation = mbp.getPrimaryC_BPartner_Location();
@@ -343,6 +343,18 @@ public class InvoiceParser {
 		invoice.setAD_User_ID(0);
 
 		return invoice;
+	}
+
+	private void setPaymentDetails(InvoiceReceived invoice, MBPartner mbp) {
+		int defaultPaymentTermId = new Query(Env.getCtx(), MPaymentTerm.Table_Name,
+				"IsDefault='Y' AND IsActive='Y' AND PaymentTermUsage in ('B','P') AND AD_Org_ID in (0, ?)", null)
+				.setClient_ID().setParameters(orgId).firstId();
+		String defaultPaymentRule = "T";
+
+		invoice.setC_PaymentTerm_ID(mbp.getPO_PaymentTerm_ID() > 0 ? mbp.getPO_PaymentTerm_ID() : defaultPaymentTermId);
+		invoice.setPaymentRule(mbp.getPaymentRulePO() != null ? mbp.getPaymentRulePO() : defaultPaymentRule);
+		invoice.setBPartner(mbp);
+		invoice.setC_BPartner_ID(mbp.get_ID());
 	}
 
 	/**
@@ -944,7 +956,7 @@ public class InvoiceParser {
 		try {
 			// No IBAN = No BankAccount
 			if (dettaglio.getIBAN() == null)
-				return mbp.getBankAccounts(true)[0];
+				return mbp.getBankAccounts(true).length > 0 ?mbp.getBankAccounts(true)[0]:null;
 
 			String iban = dettaglio.getIBAN();
 			MBPBankAccount mbpa = mbpas.stream().filter(bpa -> dettaglio.getIBAN().equals(bpa.getIBAN())).findFirst()
@@ -1000,20 +1012,17 @@ public class InvoiceParser {
 	}
 
 	/**
-	 * Finds an existing business partner by VAT or national tax code, or creates a
-	 * new one if not found.
+	 * Creates a bew business partner.
 	 * <p>
-	 * Searches for a {@code MBPartner} where the given tax code matches either
-	 * {@code TaxID} or {@code LIT_NationalIDNumber}. If no match is found, a new
-	 * business partner and location are created based on the electronic invoice
-	 * data. The new partner is saved, marked as a vendor, and stored in the
+	 * A new business partner and location are created based on the electronic
+	 * invoice data. The new partner is saved, marked as a vendor, and stored in the
 	 * {@code bp} field.
 	 * </p>
 	 *
 	 * @param fattura the electronic invoice containing the supplier's information
 	 * @return the existing or newly created {@code MBPartner}
 	 */
-	private MBPartner findOrCreateBPartner(FatturaElettronicaType fattura) {
+	private MBPartner createBPartner(FatturaElettronicaType fattura) {
 		String codice = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getDatiAnagrafici()
 				.getIdFiscaleIVA().getIdCodice();
 

@@ -33,6 +33,7 @@ public class AttachmentImportProcess extends SvrProcess {
 
 	@Override
 	protected String doIt() throws Exception {
+		String trxName = get_TrxName();
 		M_PendingInvoices pinv = new M_PendingInvoices(getCtx(), recordId, null);
 		List<MAttachmentEntry> entries = List.of(pinv.getAttachment().getEntries());
 		if (entries.isEmpty())
@@ -41,8 +42,8 @@ public class AttachmentImportProcess extends SvrProcess {
 		byte[] parsedData = invoiceParser.getXml(data);
 		InvoiceReceived inv = invoiceParser.getInvoiceFromXml(parsedData);
 		if (inv.getErrorMsg().isBlank()) {
-			inv = invoiceService.saveInvoice(inv);
-			invoiceService.archiveEInvoice(parsedData, inv);
+			inv = invoiceService.saveInvoice(inv,trxName);
+			invoiceService.archiveEInvoice(parsedData, inv, trxName);
 		} else {
 			return inv.getErrorMsg();
 		}
