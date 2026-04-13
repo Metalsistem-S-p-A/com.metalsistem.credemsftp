@@ -38,7 +38,8 @@ Bundle-ClassPath: .,
  lib/pdfua.jar,
  lib/sign.jar,
  lib/styled-xml-parser.jar,
- lib/svg.jar
+ lib/svg.jar,
+ lib/javax.activation-api.jar
 Bundle-RequiredExecutionEnvironment: JavaSE-17
 Import-Package: it.cnet.idempiere.LIT_E_Invoice.model,
  it.cnet.idempiere.LIT_E_Invoice.modelXML2,

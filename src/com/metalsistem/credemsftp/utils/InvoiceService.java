@@ -3,8 +3,6 @@ package com.metalsistem.credemsftp.utils;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
-
 import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.model.MBroadcastMessage;
 import org.compiere.model.MAttachment;
@@ -14,7 +12,6 @@ import org.compiere.model.MClient;
 import org.compiere.model.MInvoice;
 import org.compiere.model.MInvoiceLine;
 import org.compiere.model.MInvoicePaySchedule;
-import org.compiere.model.MProcess;
 import org.compiere.model.MRole;
 import org.compiere.model.MSysConfig;
 import org.compiere.model.MWindow;
@@ -28,6 +25,7 @@ import org.idempiere.broadcast.BroadcastMsgUtil;
 import com.metalsistem.credemsftp.model.M_PendingInvoices;
 
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
+import it.cnet.idempiere.LIT_E_Invoice.utilXML.RenderE_Invoice;
 import net.schmizz.sshj.sftp.RemoteResourceInfo;
 
 public class InvoiceService {
@@ -66,15 +64,8 @@ public class InvoiceService {
 			attachment.setRecord_ID(einv.get_ID());
 			attachment.setAD_Table_ID(ME_Invoice.Table_ID);
 			byte[] pdfBytes = {};
-			try {
-				PdfUtils utils = new PdfUtils();
-				MAttachment procAttachments = new MAttachment(Env.getCtx(), MProcess.Table_ID, einv.get_ID(),
-						einv.get_UUID(), trxName);
-				List<MAttachmentEntry> pdfAttachment = List.of(procAttachments.getEntries());
-				MAttachmentEntry pdfStyle = pdfAttachment.stream()
-						.filter(att -> att.getFile().getName().endsWith(".xsl")).findFirst().orElse(null);
-
-				pdfBytes = utils.create(xml, inv, true, pdfStyle);
+			try {				
+				pdfBytes = RenderE_Invoice.getFilePDF_byte(xml);
 				if (pdfBytes != null) {
 					MAttachmentEntry entry = new MAttachmentEntry("xml-" + noDocFile + ".xml", xml);
 					entry.setName("Fattura-" + nomeEinv + ".pdf");

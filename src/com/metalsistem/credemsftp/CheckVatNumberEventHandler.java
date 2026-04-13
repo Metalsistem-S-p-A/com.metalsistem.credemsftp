@@ -4,8 +4,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
-import java.util.List;
-
 import org.adempiere.base.event.AbstractEventHandler;
 import org.adempiere.base.event.IEventManager;
 import org.adempiere.base.event.IEventTopics;
