@@ -224,7 +224,7 @@ public class ToCredemProcess extends SvrProcess {
 						StringWriter swriter = new StringWriter();
 						PrintWriter pw = new PrintWriter(swriter);
 						e.printStackTrace(pw);
-						String stack = pw.toString();
+						String stack = swriter.toString();
 						pw.close();
 						swriter.close();
 						new EMail(MClient.get(Env.getAD_Client_ID(Env.getCtx())), "credemsftp@metalsistem.com",
