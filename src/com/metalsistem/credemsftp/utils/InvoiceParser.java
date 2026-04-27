@@ -79,6 +79,7 @@ public class InvoiceParser {
 	public static final String TIPO_DOC_FEPA = "LIT_FEPA_DOCTYPE";
 
 	public static final String FATTURA_DUPLICATA = "Fattura già presente nel sistema";
+	public static final String FATTURA_SCARTATA = "Autofattura scartata";
 
 	private MBPartner bp = null;
 
@@ -105,8 +106,8 @@ public class InvoiceParser {
 	private static final String NATURA_LETTERA_INTENTO = "N3.5";
 
 	private static final CLogger log = CLogger.getCLogger(InvoiceParser.class);
-//	private static final List<TipoDocumentoType> BANNED_DOCUMENT_TYPES = List.of(TipoDocumentoType.TD_04,
-//			TipoDocumentoType.TD_16, TipoDocumentoType.TD_17, TipoDocumentoType.TD_18);
+	private static final List<TipoDocumentoType> BANNED_DOCUMENT_TYPES = List.of(TipoDocumentoType.TD_16,
+			TipoDocumentoType.TD_17, TipoDocumentoType.TD_18, TipoDocumentoType.TD_19);
 
 	public InvoiceParser() {
 		orgId = Env.getAD_Org_ID(Env.getCtx());
@@ -134,10 +135,10 @@ public class InvoiceParser {
 		// TODO: Gestire caso di molteplici body(?)
 		InvoiceReceived invoice = new InvoiceReceived(new MInvoice(Env.getCtx(), 0, null));
 		FatturaElettronicaBodyType body = fattura.getFatturaElettronicaBody().get(0);
-//		if (isBannedDocument(body)) {
-//			invoice.setErrorMsg("Fattura non importata: tipo documento non valido");
-//			return invoice;
-//		}
+		if (isBannedDocument(body)) {
+			invoice.setErrorMsg(FATTURA_SCARTATA);
+			return invoice;
+		}
 
 		DatiGeneraliDocumentoType datiGeneraliDocumento = body.getDatiGenerali().getDatiGeneraliDocumento();
 		String codice = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getDatiAnagrafici()
@@ -956,7 +957,7 @@ public class InvoiceParser {
 		try {
 			// No IBAN = No BankAccount
 			if (dettaglio.getIBAN() == null)
-				return mbp.getBankAccounts(true).length > 0 ?mbp.getBankAccounts(true)[0]:null;
+				return mbp.getBankAccounts(true).length > 0 ? mbp.getBankAccounts(true)[0] : null;
 
 			String iban = dettaglio.getIBAN();
 			MBPBankAccount mbpa = mbpas.stream().filter(bpa -> dettaglio.getIBAN().equals(bpa.getIBAN())).findFirst()
@@ -1149,9 +1150,9 @@ public class InvoiceParser {
 		return new Query(Env.getCtx(), MTax.Table_Name, "IsActive = 'Y'" + WHERE_ALL, null).setClient_ID().list();
 	}
 
-//	private boolean isBannedDocument(FatturaElettronicaBodyType body) {
-//		return BANNED_DOCUMENT_TYPES.contains(body.getDatiGenerali().getDatiGeneraliDocumento().getTipoDocumento());
-//	}
+	private boolean isBannedDocument(FatturaElettronicaBodyType body) {
+		return BANNED_DOCUMENT_TYPES.contains(body.getDatiGenerali().getDatiGeneraliDocumento().getTipoDocumento());
+	}
 
 	private Timestamp toTimestamp(XMLGregorianCalendar calendar) {
 		return new Timestamp(calendar.toGregorianCalendar().getTimeInMillis());

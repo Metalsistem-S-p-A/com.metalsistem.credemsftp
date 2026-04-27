@@ -155,6 +155,10 @@ public class FromCredemProcess extends SvrProcess {
 						log.warning(InvoiceParser.FATTURA_DUPLICATA);
 						addLog("Fattura " + entry.getName() + " già presente nel sistema ");
 						sftp.rm(entry.getPath());
+					} else if (InvoiceParser.FATTURA_SCARTATA.equals(inv.getErrorMsg())) {
+						log.warning(InvoiceParser.FATTURA_SCARTATA);
+						addLog("Fattura " + entry.getName() + " è un'autofattura con tipo documento " + inv.getTipoDocumento());
+						sftp.rm(entry.getPath());
 					} else {
 						invoiceService.backupXml(entry, inv, xml, inv.getErrorMsg(), trxName);
 					}

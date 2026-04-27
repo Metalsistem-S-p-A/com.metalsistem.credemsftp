@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -51,33 +52,34 @@ import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
  * Handles the process of exporting invoices to Credemtel via SFTP.
  * 
  * <p>
- * This class generates CSV files for PO invoices and ZIP files containing XML 
+ * This class generates CSV files for PO invoices and ZIP files containing XML
  * for SO invoices, which are then uploaded to a specified SFTP server.
  * </p>
  *
  * <h2>Key Functionalities:</h2>
  * <ul>
- *   <li>Reading invoice data from the database</li>
- *   <li>Generating CSV and ZIP files based on invoice data</li>
- *   <li>Uploading generated files to a remote SFTP server</li>
- *   <li>Marking invoices as synchronized after processing</li>
+ * <li>Reading invoice data from the database</li>
+ * <li>Generating CSV and ZIP files based on invoice data</li>
+ * <li>Uploading generated files to a remote SFTP server</li>
+ * <li>Marking invoices as synchronized after processing</li>
  * </ul>
  *
  * <h2>Configurable Parameters:</h2>
  * <ul>
- *   <li><b>SftpAddress:</b> Address of the SFTP server</li>
- *   <li><b>CertificateFingerprint:</b> Fingerprint of the certificate for SSH authentication</li>
- *   <li><b>Username:</b> Username for the SFTP server</li>
- *   <li><b>Password:</b> Password for the SFTP server</li>
- *   <li><b>SftpPort:</b> Port number for SFTP connection</li>
- *   <li><b>SiaCode:</b> Identifier used for file naming</li>
- *   <li><b>CsvIdentifier:</b> Identifier for CSV file naming</li>
- *   <li><b>ZipIdentifier:</b> Identifier for ZIP file naming</li>
- *   <li><b>Path:</b> Path on the SFTP server where files will be uploaded</li>
+ * <li><b>SftpAddress:</b> Address of the SFTP server</li>
+ * <li><b>CertificateFingerprint:</b> Fingerprint of the certificate for SSH
+ * authentication</li>
+ * <li><b>Username:</b> Username for the SFTP server</li>
+ * <li><b>Password:</b> Password for the SFTP server</li>
+ * <li><b>SftpPort:</b> Port number for SFTP connection</li>
+ * <li><b>SiaCode:</b> Identifier used for file naming</li>
+ * <li><b>CsvIdentifier:</b> Identifier for CSV file naming</li>
+ * <li><b>ZipIdentifier:</b> Identifier for ZIP file naming</li>
+ * <li><b>Path:</b> Path on the SFTP server where files will be uploaded</li>
  * </ul>
  *
  * <p>
- * <b>Important Note:</b> The process ensures data consistency by marking 
+ * <b>Important Note:</b> The process ensures data consistency by marking
  * synchronized invoices in the database to prevent duplicate processing.
  * </p>
  *
@@ -145,9 +147,9 @@ public class ToCredemProcess extends SvrProcess {
 			// CSV
 			List<MInvoice> poInvoices = new Query(getCtx(), MInvoice.Table_Name,
 					"isSoTrx='N' AND DocStatus = 'CO' AND isActive='Y' AND DateAcct < CURRENT_DATE - 1 AND AD_Org_ID = "
-					+ orgId
-					+ " and c_invoice_id in (select c_invoice_id from lit_einvoice le where le.lit_mssynccredem = 'N' AND AD_Org_ID = "
-					+ orgId + " )",
+							+ orgId
+							+ " and c_invoice_id in (select c_invoice_id from lit_einvoice le where le.lit_mssynccredem = 'N' AND AD_Org_ID = "
+							+ orgId + " AND le.LIT_FEPA_DOCTYPE NOT IN ('TD16','TD17', 'TD18', 'TD19'))",
 					null).setClient_ID().list();
 
 			String dataOra = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
@@ -180,8 +182,9 @@ public class ToCredemProcess extends SvrProcess {
 
 			for (MInvoice inv : einvs) {
 				MBPartner bp = new MBPartner(getCtx(), inv.getC_BPartner_ID(), null);
-				csvPrinter.printRecord("IT" + bp.getTaxID(),
-						bp.get_Value("LIT_NationalIdNumber") != null ? bp.get_Value("LIT_NationalIdNumber") : "",
+				csvPrinter.printRecord(
+						"IT" + ((bp.getTaxID() != null && !bp.getTaxID().isBlank()) ? bp.getTaxID() : bp.get_ValueAsString("LIT_TaxID")),
+						!bp.get_ValueAsString("LIT_NationalIdNumber").isBlank() ? bp.get_ValueAsString("LIT_NationalIdNumber") : bp.get_ValueAsString("LIT_NationalIdNumber_ID"),
 						inv.getDocumentNo(),
 						inv.getDateInvoiced().toLocalDateTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")),
 						inv.get_Value("VATDocumentNo"),
@@ -194,33 +197,30 @@ public class ToCredemProcess extends SvrProcess {
 			if (count > 0 && path != null) {
 				sftp.put(new SftpFile(csvName, sw.toString().getBytes()), path + csvName);
 			}
-			
-			if(MSysConfig.getBooleanValue("LIT_MsAutoGenerateFEPA", false, getAD_Client_ID(), orgId)) {
+
+			if (MSysConfig.getBooleanValue("LIT_MsAutoGenerateFEPA", false, getAD_Client_ID(), orgId)) {
 				// Generate XML
 				List<MInvoice> soInvoices = new Query(getCtx(), MInvoice.Table_Name,
-						"(C_Invoice.IsSOTrx='Y' OR (C_Invoice.IsSOTrx='N' AND C_Invoice.LIT_FEPA_DOCTYPE  IN ('TD16','TD17', 'TD18', 'TD19')))  "
-						+ "AND C_Invoice.DocStatus IN ('CO','CL') "
-						+ "AND C_Invoice.DateInvoiced>='2019-01-01' "
-						+ "AND dt.LIT_FEPA_DOCTYPE IS NOT NULL "
-						+ "AND le.C_Invoice_ID IS NULL "
-						+ "AND C.LIT_FEPA_IPA IS NOT NULL "
-						+ "AND C_Invoice.updated < ? "
-						+ "AND C_Invoice.AD_Org_ID = ? ", null)
-						.setParameters(Timestamp.valueOf(LocalDateTime.now().minusHours(oreOffset)),Env.getAD_Org_ID(getCtx()))
+						"((C_Invoice.IsSOTrx='Y'AND C.LIT_FEPA_IPA IS NOT NULL) OR "
+								+ "(C_Invoice.IsSOTrx='N' AND C_Invoice.LIT_FEPA_DOCTYPE  IN ('TD16','TD17', 'TD18', 'TD19'))) "
+								+ "AND C_Invoice.DocStatus IN ('CO','CL') "
+								+ "AND C_Invoice.DateInvoiced>='2019-01-01' " + "AND dt.LIT_FEPA_DOCTYPE IS NOT NULL "
+								+ "AND le.C_Invoice_ID IS NULL " + "AND C_Invoice.updated < ? "
+								+ "AND C_Invoice.AD_Org_ID = ? ",
+						null)
+						.setParameters(Timestamp.valueOf(LocalDateTime.now().minusHours(oreOffset)),
+								Env.getAD_Org_ID(getCtx()))
 						.addJoinClause("LEFT JOIN C_DocType dt ON dt.C_DocType_ID=C_Invoice.C_DocTypeTarget_ID")
-						.addJoinClause("LEFT JOIN LIT_EInvoice le ON le.C_Invoice_ID=C_Invoice.C_Invoice_ID")
+						.addJoinClause(
+								"LEFT JOIN LIT_EInvoice le ON le.C_Invoice_ID=C_Invoice.C_Invoice_ID and C_Invoice.LIT_FEPA_DOCTYPE = le.LIT_FEPA_DOCTYPE")
 						.addJoinClause("LEFT JOIN C_BPartner c ON c.C_BPartner_ID=C_Invoice.C_BPartner_ID")
-						.setOrderBy("C_Invoice.LIT_VATJournal_ID, C_Invoice.DocumentNo")
-						.setClient_ID()
-						.list();
+						.setOrderBy("C_Invoice.LIT_VATJournal_ID, C_Invoice.DocumentNo").setClient_ID().list();
 				for (MInvoice i : soInvoices) {
 					try {
-						FEPAOperations fepa = new FEPAOperations(getCtx(), getAD_Client_ID(), i.getAD_Org_ID(), get_TrxName(), false, false);
-						List<MInvoice> t = new ArrayList<MInvoice>();
-						t.add(i);
-						fepa.createFile(t);
-					}
-					catch(Exception e) {
+						FEPAOperations fepa = new FEPAOperations(getCtx(), getAD_Client_ID(), i.getAD_Org_ID(), null,
+								false, false);
+						fepa.createFile(List.of(i));
+					} catch (Exception e) {
 						StringWriter swriter = new StringWriter();
 						PrintWriter pw = new PrintWriter(swriter);
 						e.printStackTrace(pw);
@@ -235,15 +235,13 @@ public class ToCredemProcess extends SvrProcess {
 			}
 
 			// XML -> ZIP
-			List<ME_Invoice> soEinvoices = new Query(getCtx(), ME_Invoice.Table_Name,
-					"LIT_MsSyncCredem='N' "
+			List<ME_Invoice> soEinvoices = new Query(getCtx(), ME_Invoice.Table_Name, "LIT_MsSyncCredem='N' "
 					+ "AND inv.isActive='Y' "
-					+ "AND inv.isSOTrx='Y' "
-					+ "AND inv.AD_Org_ID = ? "
-					+ "AND inv.updated < ?", null)
-					.setParameters(Env.getAD_Org_ID(getCtx()),Timestamp.valueOf(LocalDateTime.now().minusHours(oreOffset)))
-					.addJoinClause("join c_invoice inv on inv.c_invoice_id = lit_einvoice.c_invoice_id")
-					.setClient_ID()
+					+ "AND (inv.isSOTrx='Y' OR (inv.IsSOTrx='N' AND LIT_EInvoice.LIT_FEPA_DOCTYPE IN ('TD16','TD17', 'TD18', 'TD19'))) "
+					+ "AND inv.AD_Org_ID = ? " + "AND inv.updated < ?", null)
+					.setParameters(Env.getAD_Org_ID(getCtx()),
+							Timestamp.valueOf(LocalDateTime.now().minusHours(oreOffset)))
+					.addJoinClause("join c_invoice inv on inv.c_invoice_id = lit_einvoice.c_invoice_id").setClient_ID()
 					.list();
 
 			if (soEinvoices.size() > 0) {
@@ -274,9 +272,15 @@ public class ToCredemProcess extends SvrProcess {
 	}
 
 	private boolean isValidRecord(MInvoice inv, MBPartner bp, MDocType doctype, ME_Invoice einv) {
-		return einv != null && !einv.get_ValueAsBoolean("LIT_MsSyncCredem")
-				&& doctype.get_Value("LIT_FEPA_DOCTYPE") != null && bp.getTaxID() != null && inv.getDocumentNo() != null
-				&& inv.getDateInvoiced() != null && inv.get_Value("VATDocumentNo") != null && inv.getDateAcct() != null;
+		return einv != null 
+				&& !einv.get_ValueAsBoolean("LIT_MsSyncCredem")
+				&& doctype.get_Value("LIT_FEPA_DOCTYPE") != null 
+//				&& (bp.get_Value("LIT_NationalIdNumber") != null || bp.get_Value("LIT_NationalIdNumber_ID") != null)
+				&& ((bp.getTaxID() != null && !bp.getTaxID().isBlank()) || bp.get_Value("LIT_TaxID") != null)
+				&& inv.getDocumentNo() != null 
+				&& inv.getDateInvoiced() != null
+				&& inv.get_Value("VATDocumentNo") != null 
+				&& inv.getDateAcct() != null;
 	}
 
 }
