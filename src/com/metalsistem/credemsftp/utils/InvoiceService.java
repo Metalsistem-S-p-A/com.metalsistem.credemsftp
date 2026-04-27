@@ -86,7 +86,7 @@ public class InvoiceService {
 		 * fattura dovrebbe essere sempre nuova. Ma non si sa mai...
 		 */
 		MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
-				"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG, trxName).setClient_ID()
+				"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG + " AND isSoTrx='N'", trxName).setClient_ID()
 				.setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced()).first();
 
 		if (res == null) {
