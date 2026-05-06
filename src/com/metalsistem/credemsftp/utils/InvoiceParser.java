@@ -149,7 +149,8 @@ public class InvoiceParser {
 				.first();
 		if (mbp != null) {
 			MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
-					"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG + " AND isSoTrx = 'N'", null).setClient_ID()
+					"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG + " AND isSoTrx = 'N'",
+					null).setClient_ID()
 					.setParameters(datiGeneraliDocumento.getNumero(), mbp.get_ID(),
 							toTimestamp(datiGeneraliDocumento.getData()))
 					.first();
@@ -193,7 +194,16 @@ public class InvoiceParser {
 
 		// LOCATION
 		MBPartnerLocation mbpLocation = mbp.getPrimaryC_BPartner_Location();
-		invoice.setC_BPartner_Location_ID(mbp.getPrimaryC_BPartner_Location_ID());
+		try {
+			mbpLocation = getBPLocationFromEinvoice(fattura, mbp);
+			mbpLocation.setC_BPartner_ID(mbp.get_ID());
+			mbpLocation.saveEx();
+		} catch (Exception e) {
+			// TODO: handle exception
+			log.warning("Errore durante la creazione dell'indirizzo del BusinessPartner");
+			e.printStackTrace();
+		}
+		invoice.setC_BPartner_Location_ID(mbpLocation.get_ID());
 
 		MCountry to = new MCountry(Env.getCtx(), 214, null);
 		MCountry from = mbpLocation.getLocation(true).getCountry();
@@ -898,8 +908,9 @@ public class InvoiceParser {
 	 * @return a new {@code MBPartnerLocation} linked to the found or created
 	 *         location
 	 */
-	private MBPartnerLocation getBPLocationFromEinvoice(FatturaElettronicaType fattura, String name) {
-		MBPartnerLocation mbpLocation = new MBPartnerLocation(Env.getCtx(), 0, null);
+	private MBPartnerLocation getBPLocationFromEinvoice(FatturaElettronicaType fattura, MBPartner mbp) {
+		String name = mbp.getName();
+		MBPartnerLocation mbpLocation = null;
 		IndirizzoType sede = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getSede();
 		MLocation location = new Query(Env.getCtx(), MLocation.Table_Name,
 				"c_location.address1 ILIKE '%' || ? || '%' AND " + " c_location.postal = ? AND co.countrycode = ? AND "
@@ -909,6 +920,7 @@ public class InvoiceParser {
 				.setParameters(sede.getIndirizzo(), sede.getCAP(), sede.getNazione(), sede.getComune()).setClient_ID()
 				.first();
 		if (location == null) {
+			mbpLocation = new MBPartnerLocation(Env.getCtx(), 0, null);
 			location = new MLocation(Env.getCtx(), 0, null);
 			String indirizzo = sede.getIndirizzo();
 			if (sede.getNumeroCivico() != null && !indirizzo.contains(sede.getNumeroCivico())) {
@@ -927,10 +939,31 @@ public class InvoiceParser {
 				location.setRegion(region);
 			}
 			location.saveEx();
+			mbpLocation.setAD_Org_ID(orgId);
+			mbpLocation.setName(name + " - " + sede.getComune());
+			mbpLocation.setC_Location_ID(location.get_ID());
+			mbpLocation.setC_BPartner_ID(mbp.get_ID());
+		} else {
+			mbpLocation = new Query(Env.getCtx(), MBPartnerLocation.Table_Name,
+					"C_Location_ID = ? and C_BPartner_ID = ? " + WHERE_ORG, null).setClient_ID()
+					.setParameters(location.get_ID(), mbp.get_ID()).first();
+			if (mbpLocation == null) {
+				mbpLocation = new MBPartnerLocation(Env.getCtx(), 0, null);
+				mbpLocation.setAD_Org_ID(orgId);
+				mbpLocation.setName(name + " - " + sede.getComune());
+				mbpLocation.setC_Location_ID(location.get_ID());
+				mbpLocation.setC_BPartner_ID(mbp.get_ID());
+			}
 		}
-		mbpLocation.setAD_Org_ID(orgId);
-		mbpLocation.setName(name);
-		mbpLocation.setC_Location_ID(location.get_ID());
+		for (MBPartnerLocation loc : mbp.getLocations(true)) {
+			if (mbpLocation != null && loc.get_ID() != mbpLocation.get_ID()) {
+				loc.setIsBillTo(false);
+				loc.setIsPayFrom(false);
+				loc.setIsRemitTo(false);
+				loc.saveEx();
+			}
+		}
+		mbpLocation.setIsBillTo(true);
 		return mbpLocation;
 	}
 
@@ -1031,7 +1064,7 @@ public class InvoiceParser {
 		mbp.setIsVendor(true);
 		mbp.setAD_Org_ID(orgId);
 
-		MBPartnerLocation mbpLocation = getBPLocationFromEinvoice(fattura, mbp.getName());
+		MBPartnerLocation mbpLocation = getBPLocationFromEinvoice(fattura, mbp);
 		mbpLocation.setC_BPartner_ID(mbp.get_ID());
 		mbpLocation.saveEx();
 		mbp.setPrimaryC_BPartner_Location_ID(mbpLocation.get_ID());
