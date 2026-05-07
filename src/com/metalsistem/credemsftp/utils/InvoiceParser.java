@@ -202,6 +202,7 @@ public class InvoiceParser {
 			// TODO: handle exception
 			log.warning("Errore durante la creazione dell'indirizzo del BusinessPartner");
 			e.printStackTrace();
+			mbpLocation = mbp.getPrimaryC_BPartner_Location();
 		}
 		invoice.setC_BPartner_Location_ID(mbpLocation.get_ID());
 
