@@ -149,8 +149,7 @@ public class InvoiceParser {
 				.first();
 		if (mbp != null) {
 			MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
-					"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG + " AND isSoTrx = 'N'",
-					null).setClient_ID()
+					"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG + " and isSoTrx = 'N'", null).setClient_ID()
 					.setParameters(datiGeneraliDocumento.getNumero(), mbp.get_ID(),
 							toTimestamp(datiGeneraliDocumento.getData()))
 					.first();
