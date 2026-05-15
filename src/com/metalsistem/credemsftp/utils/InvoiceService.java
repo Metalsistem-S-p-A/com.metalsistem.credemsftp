@@ -1,6 +1,7 @@
 package com.metalsistem.credemsftp.utils;
 
 import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import org.adempiere.exceptions.AdempiereException;
@@ -42,8 +43,9 @@ public class InvoiceService {
 
 	public void archiveEInvoice(byte[] xml, InvoiceReceived inv, String trxName) {
 		String noDocFile = inv.getDocumentNo().replaceAll("/", "-");
-		String nomeEinv = noDocFile + "_" + inv.getC_BPartner_ID();
-		String nomeRecord = noDocFile + "_" + inv.getC_BPartner().getName();
+		String dtDocFile = new SimpleDateFormat("yyyy-MM-dd").format(inv.getDateInvoiced());
+		String nomeEinv = noDocFile + "_" + dtDocFile + "_" + inv.getC_BPartner_ID();
+		String nomeRecord = noDocFile + "_" + dtDocFile + "_" + inv.getC_BPartner().getName();
 		String nomeDoc = "FE: " + nomeRecord;
 		ME_Invoice einv = new Query(Env.getCtx(), ME_Invoice.Table_Name, "Name = ?" + WHERE_ORG, trxName).setClient_ID()
 				.setParameters(nomeDoc).first();
