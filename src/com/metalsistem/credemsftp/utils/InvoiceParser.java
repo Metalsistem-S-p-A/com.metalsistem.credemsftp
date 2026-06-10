@@ -3,6 +3,7 @@ package com.metalsistem.credemsftp.utils;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -15,6 +16,9 @@ import java.util.Optional;
 import javax.xml.datatype.XMLGregorianCalendar;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamReader;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathFactory;
@@ -716,19 +720,28 @@ public class InvoiceParser {
 	 */
 	public InvoiceReceived getInvoiceFromXml(byte[] xml) {
 		ManageXML_new manageXml = new ManageXML_new();
-		FatturaElettronicaType fattura = manageXml.importFatturaElettronica(new ByteArrayInputStream(xml));
-		InvoiceReceived inv = new InvoiceReceived(Env.getCtx(), 0, null);
-		try {
-			inv = getInvoice(fattura);
-		} catch (Exception e) {
-			e.printStackTrace();
-			if (isNewBP) {
-				bp.delete(false);
-				log.warning("Errore parsing fattura, nuovo BP eliminato: " + e.getLocalizedMessage());
-				inv.setErrorMsg("Errore durante la lettura della fattura");
+		
+		try(ByteArrayInputStream bais = new ByteArrayInputStream(xml)) {
+			XMLInputFactory factory = XMLInputFactory.newFactory();
+			XMLStreamReader xmlReader = factory.createXMLStreamReader(bais);
+		
+			FatturaElettronicaType fattura = manageXml.importFatturaElettronica(xmlReader);
+			InvoiceReceived inv = new InvoiceReceived(Env.getCtx(), 0, null);
+			try {
+				inv = getInvoice(fattura);
+			} catch (Exception e) {
+				e.printStackTrace();
+				if (isNewBP) {
+					bp.delete(false);
+					log.warning("Errore parsing fattura, nuovo BP eliminato: " + e.getLocalizedMessage());
+					inv.setErrorMsg("Errore durante la lettura della fattura");
+				}
 			}
+			return inv;
+		} catch (IOException | XMLStreamException e1) {
+			e1.printStackTrace();
 		}
-		return inv;
+		return null;
 	}
 
 	/**
