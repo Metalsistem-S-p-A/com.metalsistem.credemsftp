@@ -721,12 +721,12 @@ public class InvoiceParser {
 	public InvoiceReceived getInvoiceFromXml(byte[] xml) {
 		ManageXML_new manageXml = new ManageXML_new();
 		
+		InvoiceReceived inv = new InvoiceReceived(Env.getCtx(), 0, null);
 		try(ByteArrayInputStream bais = new ByteArrayInputStream(xml)) {
 			XMLInputFactory factory = XMLInputFactory.newFactory();
 			XMLStreamReader xmlReader = factory.createXMLStreamReader(bais);
 		
 			FatturaElettronicaType fattura = manageXml.importFatturaElettronica(xmlReader);
-			InvoiceReceived inv = new InvoiceReceived(Env.getCtx(), 0, null);
 			try {
 				inv = getInvoice(fattura);
 			} catch (Exception e) {
@@ -737,11 +737,11 @@ public class InvoiceParser {
 					inv.setErrorMsg("Errore durante la lettura della fattura");
 				}
 			}
-			return inv;
 		} catch (IOException | XMLStreamException e1) {
 			e1.printStackTrace();
+			inv.setErrorMsg("Errore lettura XML");
 		}
-		return null;
+		return inv;
 	}
 
 	/**
