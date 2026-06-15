@@ -18,6 +18,7 @@ import java.io.FileOutputStream;
 import java.util.List;
 
 import org.adempiere.base.annotation.Process;
+import org.adempiere.exceptions.AdempiereException;
 import org.compiere.model.Query;
 import org.compiere.process.ProcessInfoParameter;
 import org.compiere.process.SvrProcess;
@@ -192,9 +193,10 @@ public class FromCredemProcess extends SvrProcess {
 			sftp.close();
 			ssh.close();
 		} catch (Exception e) {
-			InvoiceService.sendEmailToAdmin(e.getMessage(), "CREDEMSFTP: Errore non gestito");
-			log.warning("ERRORE NON GESTITO: ");
+			InvoiceService.sendEmailToAdmin(e.getMessage(), "CREDEMSFTP: Errore non gestito in fase di ricezione");
+			log.warning("ERRORE NON GESTITO Ricezione: ");
 			e.printStackTrace();
+			throw new AdempiereException(e);
 		}
 		return Utils.getMessage("LIT_MsInfoImportInvResult", importedInvoices, (existingInvoices - importedInvoices));
 	}

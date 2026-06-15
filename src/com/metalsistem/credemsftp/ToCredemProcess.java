@@ -22,11 +22,11 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import org.adempiere.base.annotation.Process;
+import org.adempiere.exceptions.AdempiereException;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
 import org.compiere.model.MBPartner;
@@ -40,6 +40,7 @@ import org.compiere.process.SvrProcess;
 import org.compiere.util.EMail;
 import org.compiere.util.Env;
 
+import com.metalsistem.credemsftp.utils.InvoiceService;
 import com.metalsistem.credemsftp.utils.SftpFile;
 
 import it.cnet.idempiere.LIT_E_Invoice.model.ME_Invoice;
@@ -268,6 +269,11 @@ public class ToCredemProcess extends SvrProcess {
 			sftp.close();
 			ssh.close();
 			return "OK";
+		} catch (Exception e) {
+			InvoiceService.sendEmailToAdmin(e.getMessage(), "CREDEMSFTP: Errore non gestito in fasi di trasmissione");
+			log.warning("ERRORE NON GESTITO Trasmissione: ");
+			e.printStackTrace();
+			throw new AdempiereException(e);
 		}
 	}
 
