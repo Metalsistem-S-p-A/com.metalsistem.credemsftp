@@ -72,7 +72,7 @@ import it.cnet.idempiere.LIT_E_Invoice.modelXML2.ModalitaPagamentoType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.NaturaType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.ScontoMaggiorazioneType;
 import it.cnet.idempiere.LIT_E_Invoice.modelXML2.TipoDocumentoType;
-import it.cnet.idempiere.LIT_E_Invoice.utilXML.ManageXML_new;
+import it.cnet.idempiere.LIT_E_Invoice.utilXML.ManageXML;
 import it.cnet.idempiere.VATJournalModel.MLITVATDocTypeSequence;
 import it.cnet.idempiere.lettIntent.model.MBPLetterIntent;
 import net.schmizz.sshj.sftp.RemoteFile;
@@ -719,7 +719,7 @@ public class InvoiceParser {
 	 *         fails
 	 */
 	public InvoiceReceived getInvoiceFromXml(byte[] xml) {
-		ManageXML_new manageXml = new ManageXML_new();
+		ManageXML manageXml = new ManageXML();
 		
 		InvoiceReceived inv = new InvoiceReceived(Env.getCtx(), 0, null);
 		try(ByteArrayInputStream bais = new ByteArrayInputStream(xml)) {
