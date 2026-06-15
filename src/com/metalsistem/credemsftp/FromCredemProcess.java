@@ -157,7 +157,8 @@ public class FromCredemProcess extends SvrProcess {
 						sftp.rm(entry.getPath());
 					} else if (InvoiceParser.FATTURA_SCARTATA.equals(inv.getErrorMsg())) {
 						log.warning(InvoiceParser.FATTURA_SCARTATA);
-						addLog("Fattura " + entry.getName() + " è un'autofattura con tipo documento " + inv.getTipoDocumento());
+						addLog("Fattura " + entry.getName() + " è un'autofattura con tipo documento "
+								+ inv.getTipoDocumento());
 						sftp.rm(entry.getPath());
 					} else {
 						invoiceService.backupXml(entry, inv, xml, inv.getErrorMsg(), trxName);
@@ -190,10 +191,12 @@ public class FromCredemProcess extends SvrProcess {
 
 			sftp.close();
 			ssh.close();
-			return Utils.getMessage("LIT_MsInfoImportInvResult", importedInvoices,
-					(existingInvoices - importedInvoices));
+		} catch (Exception e) {
+			InvoiceService.sendEmailToAdmin(e.getMessage(), "CREDEMSFTP: Errore non gestito");
+			log.warning("ERRORE NON GESTITO: ");
+			e.printStackTrace();
 		}
+		return Utils.getMessage("LIT_MsInfoImportInvResult", importedInvoices, (existingInvoices - importedInvoices));
 	}
 
-	
 }

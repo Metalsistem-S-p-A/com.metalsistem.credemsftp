@@ -66,7 +66,7 @@ public class InvoiceService {
 			attachment.setRecord_ID(einv.get_ID());
 			attachment.setAD_Table_ID(ME_Invoice.Table_ID);
 			byte[] pdfBytes = {};
-			try {				
+			try {
 				pdfBytes = RenderE_Invoice.getFilePDF_byte(xml);
 				if (pdfBytes != null) {
 					MAttachmentEntry entry = new MAttachmentEntry("xml-" + noDocFile + ".xml", xml);
@@ -88,8 +88,9 @@ public class InvoiceService {
 		 * fattura dovrebbe essere sempre nuova. Ma non si sa mai...
 		 */
 		MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
-				"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG + " AND isSoTrx='N'", trxName).setClient_ID()
-				.setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced()).first();
+				"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG + " AND isSoTrx='N'", trxName)
+				.setClient_ID().setParameters(inv.getDocumentNo(), inv.getC_BPartner_ID(), inv.getDateInvoiced())
+				.first();
 
 		if (res == null) {
 			StringBuilder nota = new StringBuilder();
@@ -103,9 +104,9 @@ public class InvoiceService {
 				}
 			} catch (Exception e) {
 				if (InvoiceParser.getIsNewBP()) {
-					bp.deleteEx(false,trxName);
+					bp.deleteEx(false, trxName);
 				}
-				throw new AdempiereException("Errore salvataggio MInvoice",e);
+				throw new AdempiereException("Errore salvataggio MInvoice", e);
 			}
 			log.info("Fattura importata");
 
@@ -152,11 +153,10 @@ public class InvoiceService {
 		return inv;
 	}
 
-	
 	public void backupXml(RemoteResourceInfo entry, InvoiceReceived inv, byte[] xml, String err, String trxName) {
 		String invName = "Fattura: " + entry.getName();
-		M_PendingInvoices pendingInvoice = new Query(Env.getCtx(), M_PendingInvoices.Table_Name, "Name = ?",
-				trxName).setParameters(invName).setClient_ID().first();
+		M_PendingInvoices pendingInvoice = new Query(Env.getCtx(), M_PendingInvoices.Table_Name, "Name = ?", trxName)
+				.setParameters(invName).setClient_ID().first();
 		if (pendingInvoice == null) {
 			pendingInvoice = new M_PendingInvoices(Env.getCtx(), 0, trxName);
 			pendingInvoice.setName(invName);
@@ -175,9 +175,7 @@ public class InvoiceService {
 		publishNewPendingInvoiceMessage(pendingInvoice);
 		log.warning("Fattura non importata " + entry.getName() + " errore: " + err);
 	}
-	
-	
-	
+
 	public void publishNewPendingInvoiceMessage(M_PendingInvoices inv) {
 		publishBroadcastMessage(inv, M_PendingInvoices.Table_ID, PENDING_INVOICE_MSG, inv.getName(),
 				getAdminClientRole());
@@ -214,6 +212,11 @@ public class InvoiceService {
 		}
 
 		BroadcastMsgUtil.publishBroadcastMessage(msg.get_ID(), null);
+	}
+
+	public static void sendEmailToAdmin(String mailMsg, String object) {
+		new EMail(MClient.get(Env.getAD_Client_ID(Env.getCtx())), "credemsftp@metalsistem.com",
+				"notificheidempiere@metalsistem.com", object, mailMsg).send();
 	}
 
 	private MRole getAdminRole() {
