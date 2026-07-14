@@ -12,10 +12,7 @@
 
 pipeline {
     agent {
-        docker {
-            image 'maven:3.9.9-eclipse-temurin-17'
-            args '-u root:root -v idempiere-mvn-repo-cache:/root/.m2/repository'
-        }
+        label 'master'
     }
 
     options {
@@ -25,7 +22,7 @@ pipeline {
     // Niente webhook: Jenkins non è raggiungibile da Internet. pollSCM richiede solo lettura
     // in uscita verso GitHub.
     triggers {
-        pollSCM('H/5 * * * *')
+        pollSCM('0 0 * * *')
     }
 
     stages {
