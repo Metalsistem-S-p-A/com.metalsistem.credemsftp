@@ -5,10 +5,10 @@ Bundle-SymbolicName: com.metalsistem.credemsftp
 Bundle-Version: 13.0.0.qualifier
 Require-Bundle: org.adempiere.base;bundle-version="11.0.0",
  org.adempiere.plugin.utils;bundle-version="11.0.0",
- it.cnet.impl.LIT_VATJournal;bundle-version="11.0.0",
  org.osgi.service.component.annotations;bundle-version="1.5.1",
  org.osgi.service.event,
- org.adempiere.ui.zk;bundle-version="13.0.0"
+ org.adempiere.ui.zk;bundle-version="13.0.0",
+ it.cnet.impl.LIT_VATJournal;bundle-version="[13.0.0,14.0.0)"
 Bundle-Vendor: METALSISTEM
 Automatic-Module-Name: com.metalsistem.credemsftp
 Bundle-ActivationPolicy: lazy
