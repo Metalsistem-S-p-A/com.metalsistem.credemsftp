@@ -32,6 +32,7 @@ import org.compiere.model.MBPartner;
 import org.compiere.model.MBPartnerLocation;
 import org.compiere.model.MBank;
 import org.compiere.model.MCountry;
+import org.compiere.model.MCountryGroup;
 import org.compiere.model.MCurrency;
 import org.compiere.model.MDocType;
 import org.compiere.model.MInvoice;
@@ -43,6 +44,7 @@ import org.compiere.model.MProduct;
 import org.compiere.model.MRefList;
 import org.compiere.model.MRegion;
 import org.compiere.model.MTax;
+import org.compiere.model.MTaxCategory;
 import org.compiere.model.MUOM;
 import org.compiere.model.Query;
 import org.compiere.util.CLogger;
@@ -782,7 +784,7 @@ public class InvoiceParser {
 			res = taxes.stream()
 					.filter(tax -> tax.get_ValueAsString(LIT_XML_INVOICE_TAX_TYPE).startsWith(natura.value())
 							&& tax.get_ValueAsBoolean(IS_DISPLAYED) && tax.get_ValueAsBoolean(LIT_IS_DEFAULT_TAX)
-							&& tax.getC_TaxCategory().getName().contains("Reverse charge"))
+							&& new MTaxCategory(Env.getCtx(), tax.getC_TaxCategory_ID(), null).getName().contains("Reverse charge"))
 					.findFirst();
 			if (res.isPresent())
 				return res.get();
@@ -790,7 +792,7 @@ public class InvoiceParser {
 			res = taxes.stream()
 					.filter(tax -> tax.get_ValueAsString(LIT_XML_INVOICE_TAX_TYPE).startsWith(natura.value())
 							&& !tax.get_ValueAsBoolean(IS_DISPLAYED)
-							&& tax.getC_TaxCategory().getName().contains("Reverse charge"))
+							&& new MTaxCategory(Env.getCtx(), tax.getC_TaxCategory_ID(), null).getName().contains("Reverse charge"))
 					.findFirst();
 			if (res.isPresent())
 				if (res.get().getParent_Tax_ID() > 0 && !res.get().get_ValueAsBoolean(LIT_IS_DEFAULT_TAX))
@@ -815,7 +817,7 @@ public class InvoiceParser {
 		}
 		// Filtra in base ad Aliquota e Country from/to e Persona giuridica
 		res = taxes.stream().filter(tax -> {
-			if (tax.getC_CountryGroupFrom() != null && registroIva != null) {
+			if (MCountryGroup.get(tax.getC_CountryGroupFrom_ID()) != null && registroIva != null) {
 				return tax.getRate().compareTo(aliquota) == 0 && tax.getSOPOType().equals("B")
 						&& tax.getC_CountryGroupFrom_ID() == registroIva.getC_CountryGroupFrom_ID()
 						&& (bp.get_ValueAsString("LIT_TaxTypeBPPartner_ID")
@@ -829,7 +831,7 @@ public class InvoiceParser {
 
 		// Probabile filtro ridondante
 		res = taxes.stream().filter(tax -> {
-			if (tax.getC_CountryGroupFrom() != null && registroIva != null) {
+			if (MCountryGroup.get(tax.getC_CountryGroupFrom_ID()) != null && registroIva != null) {
 				return tax.getRate().compareTo(aliquota) == 0 && tax.getSOPOType().equals("B")
 						&& tax.getC_CountryGroupFrom_ID() == registroIva.getC_CountryGroupFrom_ID();
 			}

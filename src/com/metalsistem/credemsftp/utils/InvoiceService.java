@@ -45,7 +45,7 @@ public class InvoiceService {
 		String noDocFile = inv.getDocumentNo().replaceAll("/", "-");
 		String dtDocFile = new SimpleDateFormat("yyyy-MM-dd").format(inv.getDateInvoiced());
 		String nomeEinv = noDocFile + "_" + dtDocFile + "_" + inv.getC_BPartner_ID();
-		String nomeRecord = noDocFile + "_" + dtDocFile + "_" + inv.getC_BPartner().getName();
+		String nomeRecord = noDocFile + "_" + dtDocFile + "_" + MBPartner.get(Env.getCtx(), inv.getC_BPartner_ID()).getName();
 		String nomeDoc = "FE: " + nomeRecord;
 		ME_Invoice einv = new Query(Env.getCtx(), ME_Invoice.Table_Name, "Name = ?" + WHERE_ORG, trxName).setClient_ID()
 				.setParameters(nomeDoc).first();
@@ -62,12 +62,10 @@ public class InvoiceService {
 			einv.set_ValueOfColumn(InvoiceParser.TIPO_DOC_FEPA, inv.getTipoDocumento());
 			einv.saveEx(trxName);
 
-			MAttachment attachment = new MAttachment(Env.getCtx(), 0, trxName);
-			attachment.setRecord_ID(einv.get_ID());
-			attachment.setAD_Table_ID(ME_Invoice.Table_ID);
-			byte[] pdfBytes = {};
-			try {
-				pdfBytes = RenderE_Invoice.getFilePDF_byte(xml);
+			try(MAttachment attachment = new MAttachment(Env.getCtx(), 0, trxName);) {
+				attachment.setRecord_ID(einv.get_ID());
+				attachment.setAD_Table_ID(ME_Invoice.Table_ID);
+				byte[] pdfBytes = RenderE_Invoice.getFilePDF_byte(xml);
 				if (pdfBytes != null) {
 					MAttachmentEntry entry = new MAttachmentEntry("xml-" + noDocFile + ".xml", xml);
 					entry.setName("Fattura-" + nomeEinv + ".pdf");
@@ -129,15 +127,15 @@ public class InvoiceService {
 
 			inv.set_ValueOfColumn("Note", nota.toString());
 			inv.saveEx(trxName);
-			MAttachment attachment = new MAttachment(Env.getCtx(), 0, trxName);
-			attachment.setRecord_ID(inv.get_ID());
-			attachment.setAD_Table_ID(MInvoice.Table_ID);
-			for (MAttachmentEntry a : inv.getAttachmentEntries()) {
-				attachment.addEntry(a);
-				attachment.saveEx(trxName);
+			try(MAttachment attachment = new MAttachment(Env.getCtx(), 0, trxName);) {
+				attachment.setRecord_ID(inv.get_ID());
+				attachment.setAD_Table_ID(MInvoice.Table_ID);
+				for (MAttachmentEntry a : inv.getAttachmentEntries()) {
+					attachment.addEntry(a);
+					attachment.saveEx(trxName);
+				}
+				log.info("Allegati Fattura importati");
 			}
-			log.info("Allegati Fattura importati");
-
 			for (MInvoicePaySchedule s : inv.getScheduledPayments()) {
 				s.setC_Invoice_ID(inv.get_ID());
 				s.saveEx(trxName);
@@ -162,12 +160,12 @@ public class InvoiceService {
 			pendingInvoice.setName(invName);
 			pendingInvoice.setDescription(err);
 			pendingInvoice.saveEx(trxName);
-			MAttachment allegato = new MAttachment(Env.getCtx(), M_PendingInvoices.Table_ID, pendingInvoice.get_ID(),
-					pendingInvoice.get_UUID(), trxName);
-			MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(), xml);
-			allegato.addEntry(entryAllegato);
-			allegato.setRecord_ID(pendingInvoice.get_ID());
-			allegato.saveEx(trxName);
+			try(MAttachment allegato = new MAttachment(Env.getCtx(), M_PendingInvoices.Table_ID, pendingInvoice.get_ID(), pendingInvoice.get_UUID(), trxName);) {
+				MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(), xml);
+				allegato.addEntry(entryAllegato);
+				allegato.setRecord_ID(pendingInvoice.get_ID());
+				allegato.saveEx(trxName);
+			}
 		}
 		pendingInvoice.setDescription(err.concat("\n\nOrario ultimo import: ")
 				.concat(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME).toString()));

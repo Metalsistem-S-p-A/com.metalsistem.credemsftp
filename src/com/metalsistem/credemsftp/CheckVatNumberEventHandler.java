@@ -8,6 +8,7 @@ import org.adempiere.base.event.AbstractEventHandler;
 import org.adempiere.base.event.IEventManager;
 import org.adempiere.base.event.IEventTopics;
 import org.adempiere.exceptions.AdempiereException;
+import org.compiere.model.MBPartnerLocation;
 import org.compiere.model.MInvoice;
 import org.compiere.model.MOrgInfo;
 import org.compiere.model.MSequence;
@@ -39,14 +40,15 @@ public class CheckVatNumberEventHandler extends AbstractEventHandler {
 		  
 		if (IEventTopics.DOC_AFTER_COMPLETE.equals(event.getTopic())) {
 			MInvoice inv = (MInvoice) getPO(event);
+			MBPartnerLocation bpl = new MBPartnerLocation(inv.getCtx(), inv.getC_BPartner_Location_ID(), inv.get_TrxName());
 			int fromId = 0;
 			int toId = 0;
 			MOrgInfo oi = MOrgInfo.get(inv.getCtx(), inv.getAD_Org_ID(), inv.get_TrxName());
 			if (inv.isSOTrx()) {
 				fromId = oi.getC_Location_ID();
-				toId = inv.getC_BPartner_Location().getC_Location_ID();
+				toId = bpl.getC_Location_ID();
 			} else {
-				fromId = inv.getC_BPartner_Location().getC_Location_ID();
+				fromId = bpl.getC_Location_ID();
 				toId = oi.getC_Location_ID();
 			}
 
