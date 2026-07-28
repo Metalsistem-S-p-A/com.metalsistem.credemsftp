@@ -190,6 +190,8 @@ public class FromCredemProcess extends SvrProcess {
 						sftp.rm(entry.getPath());
 					}
 				}
+				sftp.close();
+				ssh.close();
 			} catch (Exception e) {
 				InvoiceService
 						.sendEmailToAdmin(
