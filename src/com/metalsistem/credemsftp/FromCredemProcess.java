@@ -116,85 +116,92 @@ public class FromCredemProcess extends SvrProcess {
 			}
 			ssh.connect(sftpAddress, port);
 			ssh.authPassword(userName, password.toCharArray());
-			final SFTPClient sftp = ssh.newSFTPClient();
-			List<RemoteResourceInfo> filelist = sftp.ls(path, (RemoteResourceInfo resource) -> {
-				final String filename = resource.getName();
-				return filename.toLowerCase().endsWith(".xml") || filename.toLowerCase().endsWith(".p7m");
-			});
-			if (Env.getAD_Org_ID(getCtx()) <= 0)
-				return Utils.getMessage("LIT_MsErrorOrgNotSelected");
+			try (final SFTPClient sftp = ssh.newSFTPClient()) {
+				List<RemoteResourceInfo> filelist = sftp.ls(path, (RemoteResourceInfo resource) -> {
+					final String filename = resource.getName();
+					return filename.toLowerCase().endsWith(".xml") || filename.toLowerCase().endsWith(".p7m");
+				});
+				if (Env.getAD_Org_ID(getCtx()) <= 0)
+					return Utils.getMessage("LIT_MsErrorOrgNotSelected");
 
-			for (RemoteResourceInfo entry : filelist) {
-				String[] parts = entry.getName().split("\\.");
-				if (credemId.equals(parts[1])) {
-					existingInvoices++;
-					InvoiceReceived inv = null;
-					byte[] xml = null;
-					try {
-						xml = invoiceParser.getXml(entry, sftp);
-					} catch (Exception e) {
-						log.warning("Error parsing XML: " + e.getMessage());
-						log.warning("Skipping invoice... ");
-						addLog("Error parsing XML: " + e.getMessage());
-						continue;
-					}
-					inv = invoiceParser.getInvoiceFromXml(xml);
-					if (inv.getErrorMsg().isBlank()) {
+				for (RemoteResourceInfo entry : filelist) {
+					String[] parts = entry.getName().split("\\.");
+					if (credemId.equals(parts[1])) {
+						existingInvoices++;
+						InvoiceReceived inv = null;
+						byte[] xml = null;
 						try {
-							inv = invoiceService.saveInvoice(inv, trxName);
-							if (inv.get_ID() > 0) {
-								importedInvoices++;
-								invoiceService.archiveEInvoice(xml, inv, trxName);
-								sftp.rm(entry.getPath());
+							xml = invoiceParser.getXml(entry, sftp);
+						} catch (Exception e) {
+							log.warning("Error parsing XML: " + e.getMessage());
+							log.warning("Skipping invoice... ");
+							addLog("Error parsing XML: " + e.getMessage());
+							continue;
+						}
+						inv = invoiceParser.getInvoiceFromXml(xml);
+						if (inv.getErrorMsg().isBlank()) {
+							try {
+								inv = invoiceService.saveInvoice(inv, trxName);
+								if (inv.get_ID() > 0) {
+									importedInvoices++;
+									invoiceService.archiveEInvoice(xml, inv, trxName);
+									sftp.rm(entry.getPath());
+								}
+							} catch (Exception e) {
+								log.warning("Fattura non importata, errore durante il salvataggio");
+								e.printStackTrace();
+								invoiceService.backupXml(entry, inv, xml, e.getMessage(), trxName);
+							}
+						} else if (InvoiceParser.FATTURA_DUPLICATA.equals(inv.getErrorMsg())) {
+							log.warning(InvoiceParser.FATTURA_DUPLICATA);
+							addLog("Fattura " + entry.getName() + " già presente nel sistema ");
+							sftp.rm(entry.getPath());
+						} else if (InvoiceParser.FATTURA_SCARTATA.equals(inv.getErrorMsg())) {
+							log.warning(InvoiceParser.FATTURA_SCARTATA);
+							addLog("Fattura " + entry.getName() + " è un'autofattura con tipo documento "
+									+ inv.getTipoDocumento());
+							sftp.rm(entry.getPath());
+						} else {
+							invoiceService.backupXml(entry, inv, xml, inv.getErrorMsg(), trxName);
+						}
+					} else if (parts[0].length() >= 16 && credemId.contains(parts[0].substring(10, 15))) {
+						log.warning("Elaboro esito");
+						byte[] xml = invoiceParser.getXml(entry, sftp);
+						try {
+							List<M_EsitoCredem> esiti = invoiceParser.getDatiEsito(xml);
+							for (M_EsitoCredem esito : esiti) {
+								ME_Invoice einv = new Query(getCtx(), ME_Invoice.Table_Name,
+										"LIT_MsSyncCredem='Y' AND inv.VATDocumentNo = ?  AND inv.isSOTrx='Y' ", trxName)
+										.setParameters(esito.getDocumentNo())
+										.addJoinClause(
+												"join c_invoice inv on inv.c_invoice_id = lit_einvoice.c_invoice_id")
+										.setClient_ID().first();
+								if (einv != null) {
+									esito.setLIT_EInvoice_ID(einv.get_ID());
+									esito.saveEx(trxName);
+								}
 							}
 						} catch (Exception e) {
-							log.warning("Fattura non importata, errore durante il salvataggio");
-							e.printStackTrace();
-							invoiceService.backupXml(entry, inv, xml, e.getMessage(), trxName);
+							String name = entry.getName();
+							FileOutputStream output = new FileOutputStream(backupPath.concat(name));
+							output.write(xml);
+							output.close();
 						}
-					} else if (InvoiceParser.FATTURA_DUPLICATA.equals(inv.getErrorMsg())) {
-						log.warning(InvoiceParser.FATTURA_DUPLICATA);
-						addLog("Fattura " + entry.getName() + " già presente nel sistema ");
 						sftp.rm(entry.getPath());
-					} else if (InvoiceParser.FATTURA_SCARTATA.equals(inv.getErrorMsg())) {
-						log.warning(InvoiceParser.FATTURA_SCARTATA);
-						addLog("Fattura " + entry.getName() + " è un'autofattura con tipo documento "
-								+ inv.getTipoDocumento());
-						sftp.rm(entry.getPath());
-					} else {
-						invoiceService.backupXml(entry, inv, xml, inv.getErrorMsg(), trxName);
 					}
-				} else if (parts[0].length() >= 16 && credemId.contains(parts[0].substring(10, 15))) {
-					// ELABORO ESITO
-					byte[] xml = invoiceParser.getXml(entry, sftp);
-					try {
-						List<M_EsitoCredem> esiti = invoiceParser.getDatiEsito(xml);
-						for (M_EsitoCredem esito : esiti) {
-							ME_Invoice einv = new Query(getCtx(), ME_Invoice.Table_Name,
-									"LIT_MsSyncCredem='Y' AND inv.VATDocumentNo = ?  AND inv.isSOTrx='Y' ", trxName)
-									.setParameters(esito.getDocumentNo())
-									.addJoinClause("join c_invoice inv on inv.c_invoice_id = lit_einvoice.c_invoice_id")
-									.setClient_ID().first();
-							if (einv != null) {
-								esito.setLIT_EInvoice_ID(einv.get_ID());
-								esito.saveEx(trxName);
-							}
-						}
-					} catch (Exception e) {
-						String name = entry.getName();
-						FileOutputStream output = new FileOutputStream(backupPath.concat(name));
-						output.write(xml);
-						output.close();
-					}
-					sftp.rm(entry.getPath());
 				}
+			} catch (Exception e) {
+				InvoiceService
+						.sendEmailToAdmin(
+								"Org: " + Env.getAD_Org_ID(getCtx()) + " Client: " + Env.getAD_Client_ID(getCtx())
+										+ "\n\n" + e.getMessage(),
+								"CREDEMSFTP: Errore non gestito in fase di ricezione");
+				log.warning("ERRORE NON GESTITO Ricezione: ");
+				e.printStackTrace();
+				throw new AdempiereException(e);
 			}
-
-			sftp.close();
-			ssh.close();
 		} catch (Exception e) {
-			InvoiceService.sendEmailToAdmin(e.getMessage(), "CREDEMSFTP: Errore non gestito in fase di ricezione");
-			log.warning("ERRORE NON GESTITO Ricezione: ");
+			log.warning("Errore connessione ssh: " + e.getLocalizedMessage());
 			e.printStackTrace();
 			throw new AdempiereException(e);
 		}
