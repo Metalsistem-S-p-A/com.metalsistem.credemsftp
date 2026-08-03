@@ -252,14 +252,14 @@ public class InvoiceParser {
 				case MG -> {
 					if (percentuale != null)
 						price = linea.getPrezzoUnitario().add(linea.getPrezzoUnitario().multiply(percentuale)
-								.divide(BigDecimal.valueOf(100), RoundingMode.HALF_DOWN));
+								.divide(BigDecimal.valueOf(100), RoundingMode.HALF_UP));
 					if (importo != null)
 						price = linea.getPrezzoUnitario().add(importo);
 				}
 				case SC -> {
 					if (percentuale != null)
 						price = linea.getPrezzoUnitario().subtract(linea.getPrezzoUnitario().multiply(percentuale)
-								.divide(BigDecimal.valueOf(100), RoundingMode.HALF_DOWN));
+								.divide(BigDecimal.valueOf(100), RoundingMode.HALF_UP));
 					if (importo != null)
 						price = linea.getPrezzoUnitario().subtract(importo);
 				}
@@ -569,7 +569,7 @@ public class InvoiceParser {
 	private String parseDatiRitenuta(BigDecimal imponibile, List<DatiRitenutaType> ritenute) throws Exception {
 		StringBuilder notaRitenute = new StringBuilder();
 		for (DatiRitenutaType ritenuta : ritenute) {
-			BigDecimal aliquota = ritenuta.getAliquotaRitenuta().setScale(2, RoundingMode.HALF_DOWN);
+			BigDecimal aliquota = ritenuta.getAliquotaRitenuta().setScale(2, RoundingMode.HALF_UP);
 			notaRitenute.append("- Ritenuta ").append(aliquota).append("%: ").append(ritenuta.getImportoRitenuta())
 					.append(" \n");
 		}
