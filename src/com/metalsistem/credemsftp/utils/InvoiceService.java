@@ -1,9 +1,11 @@
 package com.metalsistem.credemsftp.utils;
 
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.model.MBroadcastMessage;
 import org.compiere.model.MAttachment;
@@ -151,6 +153,22 @@ public class InvoiceService {
 		return inv;
 	}
 
+	public void backupXml(RemoteResourceInfo entry, InvoiceReceived inv, byte[] xml, Exception exception, String trxName) {
+		String err = "";
+		try(StringWriter sw = new StringWriter(); PrintWriter pw = new PrintWriter(sw);) {
+			exception.printStackTrace(pw);
+			err = pw.toString();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		if(err.length() > 500) {
+			err = err.substring(500);
+		}
+		
+		backupXml(entry, inv, xml, exception, trxName);
+	}
+	
 	public void backupXml(RemoteResourceInfo entry, InvoiceReceived inv, byte[] xml, String err, String trxName) {
 		String invName = "Fattura: " + entry.getName();
 		M_PendingInvoices pendingInvoice = new Query(Env.getCtx(), M_PendingInvoices.Table_Name, "Name = ?", trxName)
@@ -158,7 +176,7 @@ public class InvoiceService {
 		if (pendingInvoice == null) {
 			pendingInvoice = new M_PendingInvoices(Env.getCtx(), 0, trxName);
 			pendingInvoice.setName(invName);
-			pendingInvoice.setDescription(err);
+			
 			pendingInvoice.saveEx(trxName);
 			try(MAttachment allegato = new MAttachment(Env.getCtx(), M_PendingInvoices.Table_ID, pendingInvoice.get_ID(), pendingInvoice.get_UUID(), trxName);) {
 				MAttachmentEntry entryAllegato = new MAttachmentEntry(entry.getName(), xml);
@@ -167,8 +185,8 @@ public class InvoiceService {
 				allegato.saveEx(trxName);
 			}
 		}
-		pendingInvoice.setDescription(err.concat("\n\nOrario ultimo import: ")
-				.concat(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME).toString()));
+		
+		pendingInvoice.setDescription(err);
 		pendingInvoice.saveEx(trxName);
 		publishNewPendingInvoiceMessage(pendingInvoice);
 		log.warning("Fattura non importata " + entry.getName() + " errore: " + err);

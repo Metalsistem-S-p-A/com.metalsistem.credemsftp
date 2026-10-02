@@ -150,15 +150,15 @@ public class FromCredemProcess extends SvrProcess {
 							} catch (Exception e) {
 								log.warning("Fattura non importata, errore durante il salvataggio");
 								e.printStackTrace();
-								invoiceService.backupXml(entry, inv, xml, e.getMessage(), trxName);
+								invoiceService.backupXml(entry, inv, xml, e, trxName);
 							}
 						} else if (InvoiceParser.FATTURA_DUPLICATA.equals(inv.getErrorMsg())) {
 							log.warning(InvoiceParser.FATTURA_DUPLICATA);
-							addLog("Fattura " + entry.getName() + " già presente nel sistema ");
+							addLog("Fattura " + entry.getName() + " gia' presente nel sistema ");
 							sftp.rm(entry.getPath());
 						} else if (InvoiceParser.FATTURA_SCARTATA.equals(inv.getErrorMsg())) {
 							log.warning(InvoiceParser.FATTURA_SCARTATA);
-							addLog("Fattura " + entry.getName() + " è un'autofattura con tipo documento "
+							addLog("Fattura " + entry.getName() + " e' un'autofattura con tipo documento "
 									+ inv.getTipoDocumento());
 							sftp.rm(entry.getPath());
 						} else {
