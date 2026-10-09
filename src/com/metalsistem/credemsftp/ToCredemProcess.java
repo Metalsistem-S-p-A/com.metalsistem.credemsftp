@@ -185,7 +185,7 @@ public class ToCredemProcess extends SvrProcess {
 				MBPartner bp = new MBPartner(getCtx(), inv.getC_BPartner_ID(), null);
 				csvPrinter.printRecord(
 						"IT" + bp.getTaxID(),
-						!bp.get_ValueAsString("LIT_NationalIdNumber").isBlank() ? bp.get_ValueAsString("LIT_NationalIdNumber") : bp.get_ValueAsString("LIT_NationalIdNumber_ID"),
+						!bp.get_ValueAsString("LIT_NationalIdNumber").isBlank() ? bp.get_ValueAsString("LIT_NationalIdNumber") : "",
 						inv.getDocumentNo(),
 						inv.getDateInvoiced().toLocalDateTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")),
 						inv.get_Value("VATDocumentNo"),
