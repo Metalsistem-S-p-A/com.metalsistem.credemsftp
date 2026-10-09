@@ -166,7 +166,7 @@ public class InvoiceService {
 			err = err.substring(500);
 		}
 		
-		backupXml(entry, inv, xml, exception, trxName);
+		backupXml(entry, inv, xml, err, trxName);
 	}
 	
 	public void backupXml(RemoteResourceInfo entry, InvoiceReceived inv, byte[] xml, String err, String trxName) {
