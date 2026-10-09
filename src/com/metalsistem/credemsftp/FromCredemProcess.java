@@ -15,16 +15,21 @@
 package com.metalsistem.credemsftp;
 
 import java.io.FileOutputStream;
+import java.sql.Savepoint;
 import java.util.List;
+import java.util.Objects;
 
 import org.adempiere.base.annotation.Process;
 import org.adempiere.exceptions.AdempiereException;
+import org.compiere.model.MAttachment;
 import org.compiere.model.Query;
 import org.compiere.process.ProcessInfoParameter;
 import org.compiere.process.SvrProcess;
 import org.compiere.util.Env;
+import org.compiere.util.Trx;
 
 import com.metalsistem.credemsftp.model.M_EsitoCredem;
+import com.metalsistem.credemsftp.model.M_PendingInvoices;
 import com.metalsistem.credemsftp.utils.InvoiceParser;
 import com.metalsistem.credemsftp.utils.InvoiceReceived;
 import com.metalsistem.credemsftp.utils.InvoiceService;
@@ -67,6 +72,8 @@ public class FromCredemProcess extends SvrProcess {
 	private final InvoiceParser invoiceParser = new InvoiceParser();
 	private final InvoiceService invoiceService = new InvoiceService();
 
+	private static final String UNKNOWN_PARSE_ERROR = "Errore sconosciuto durante la lettura della fattura";
+
 	private final String backupPath = "/mnt/idempierefs/MsBackupCredem/";
 
 	private String sftpAddress;
@@ -76,6 +83,7 @@ public class FromCredemProcess extends SvrProcess {
 	private String path;
 
 	private Integer importedInvoices = 0;
+	private Integer importedPendingInvoices = 0;
 	private Integer existingInvoices = 0;
 	private Integer port;
 
@@ -108,6 +116,12 @@ public class FromCredemProcess extends SvrProcess {
 	@Override
 	protected String doIt() throws Exception {
 		String trxName = get_TrxName();
+		Trx trx = Trx.get(trxName, false);
+		if (Env.getAD_Org_ID(getCtx()) <= 0)
+			return Utils.getMessage("LIT_MsErrorOrgNotSelected");
+
+		retryPendingInvoices();
+
 		try (final SSHClient ssh = new SSHClient()) {
 			if ("test".equals(certificateFingerprint)) {
 				ssh.addHostKeyVerifier(new PromiscuousVerifier());
@@ -121,8 +135,6 @@ public class FromCredemProcess extends SvrProcess {
 					final String filename = resource.getName();
 					return filename.toLowerCase().endsWith(".xml") || filename.toLowerCase().endsWith(".p7m");
 				});
-				if (Env.getAD_Org_ID(getCtx()) <= 0)
-					return Utils.getMessage("LIT_MsErrorOrgNotSelected");
 
 				for (RemoteResourceInfo entry : filelist) {
 					String[] parts = entry.getName().split("\\.");
@@ -139,7 +151,10 @@ public class FromCredemProcess extends SvrProcess {
 							continue;
 						}
 						inv = invoiceParser.getInvoiceFromXml(xml);
-						if (inv.getErrorMsg().isBlank()) {
+						String errorMsg = Objects.requireNonNullElse(inv.getErrorMsg(), UNKNOWN_PARSE_ERROR);
+						switch (errorMsg) {
+						case "" -> {
+							Savepoint savepoint = trx.setSavepoint(null);
 							try {
 								inv = invoiceService.saveInvoice(inv, trxName);
 								if (inv.get_ID() > 0) {
@@ -147,22 +162,30 @@ public class FromCredemProcess extends SvrProcess {
 									invoiceService.archiveEInvoice(xml, inv, trxName);
 									sftp.rm(entry.getPath());
 								}
+								trx.releaseSavepoint(savepoint);
 							} catch (Exception e) {
 								log.warning("Fattura non importata, errore durante il salvataggio");
 								e.printStackTrace();
+								trx.rollback(savepoint);
 								invoiceService.backupXml(entry, inv, xml, e, trxName);
+								sftp.rm(entry.getPath());
 							}
-						} else if (InvoiceParser.FATTURA_DUPLICATA.equals(inv.getErrorMsg())) {
+						}
+						case InvoiceParser.FATTURA_DUPLICATA -> {
 							log.warning(InvoiceParser.FATTURA_DUPLICATA);
 							addLog("Fattura " + entry.getName() + " gia' presente nel sistema ");
 							sftp.rm(entry.getPath());
-						} else if (InvoiceParser.FATTURA_SCARTATA.equals(inv.getErrorMsg())) {
+						}
+						case InvoiceParser.FATTURA_SCARTATA -> {
 							log.warning(InvoiceParser.FATTURA_SCARTATA);
 							addLog("Fattura " + entry.getName() + " e' un'autofattura con tipo documento "
 									+ inv.getTipoDocumento());
 							sftp.rm(entry.getPath());
-						} else {
-							invoiceService.backupXml(entry, inv, xml, inv.getErrorMsg(), trxName);
+						}
+						default -> {
+							invoiceService.backupXml(entry, inv, xml, errorMsg, trxName);
+							sftp.rm(entry.getPath());
+						}
 						}
 					} else if (parts[0].length() >= 16 && credemId.contains(parts[0].substring(10, 15))) {
 						log.warning("Elaboro esito");
@@ -208,6 +231,69 @@ public class FromCredemProcess extends SvrProcess {
 			throw new AdempiereException(e);
 		}
 		return Utils.getMessage("LIT_MsInfoImportInvResult", importedInvoices, (existingInvoices - importedInvoices));
+	}
+
+	private void retryPendingInvoices() {
+		List<M_PendingInvoices> pendingInvoices = new Query(getCtx(), M_PendingInvoices.Table_Name,
+				"IsActive = 'Y' AND AD_Org_ID = ?", get_TrxName()).setParameters(Env.getAD_Org_ID(getCtx()))
+				.setClient_ID().setOrderBy(M_PendingInvoices.COLUMNNAME_Created).list();
+
+		for (M_PendingInvoices pending : pendingInvoices) {
+			MAttachment attachment = pending.getAttachment();
+			if (attachment == null || attachment.getEntryCount() == 0) {
+				log.warning("Fattura sospesa senza allegato: " + pending.getName());
+				continue;
+			}
+
+			String trxName = Trx.createTrxName("CredemPending");
+			Trx trx = Trx.get(trxName, true);
+			try {
+				byte[] xml = invoiceParser.getXml(attachment.getEntry(0).getData());
+				InvoiceReceived inv = invoiceParser.getInvoiceFromXml(xml);
+				String errorMsg = Objects.requireNonNullElse(inv.getErrorMsg(), UNKNOWN_PARSE_ERROR);
+				M_PendingInvoices pendingTrx = new M_PendingInvoices(getCtx(), pending.get_ID(), trxName);
+				switch (errorMsg) {
+				case "" -> {
+					inv = invoiceService.saveInvoice(inv, trxName);
+					if (inv.get_ID() > 0) {
+						invoiceService.archiveEInvoice(xml, inv, trxName);
+						pendingTrx.deleteEx(true, trxName);
+						trx.commit(true);
+						importedPendingInvoices++;
+						addLog("Fattura sospesa " + pending.getName() + " importata");
+					} else {
+						trx.rollback();
+					}
+				}
+				case InvoiceParser.FATTURA_DUPLICATA, InvoiceParser.FATTURA_SCARTATA -> {
+					pendingTrx.deleteEx(true, trxName);
+					trx.commit(true);
+					addLog("Fattura sospesa " + pending.getName() + " rimossa: " + errorMsg);
+				}
+				default -> {
+					trx.rollback();
+					updatePendingDescription(pending, errorMsg);
+				}
+				}
+			} catch (Exception e) {
+				trx.rollback();
+				log.warning("Fattura sospesa " + pending.getName() + " non importata: " + e.getMessage());
+				e.printStackTrace();
+				updatePendingDescription(pending, e.getMessage());
+			} finally {
+				InvoiceParser.setIsNewBP(false);
+				trx.close();
+			}
+		}
+		if (!pendingInvoices.isEmpty())
+			addLog("Fatture sospese importate: " + importedPendingInvoices + "/" + pendingInvoices.size());
+	}
+
+	private void updatePendingDescription(M_PendingInvoices pending, String err) {
+		if (err == null || err.equals(pending.getDescription()))
+			return;
+		pending.setDescription(err);
+		pending.saveEx(get_TrxName());
 	}
 
 }
