@@ -280,7 +280,7 @@ public class InvoiceParser {
 				il.setProduct(getProductByTax(invTax, mbp, TIPO_RIGA_DETTAGLIO_LINEE));
 			} catch (Exception e) {
 				// TODO: handle exception
-				invoice.setErrorMsg(e.getLocalizedMessage());
+				invoice.setErrorMsg(e.toString());
 				e.printStackTrace();
 				log.warning("Errore recupero imposta: " + e.getLocalizedMessage());
 			}
@@ -409,7 +409,7 @@ public class InvoiceParser {
 				il.setProduct(getProductByTax(invTax, mbp, TIPO_RIGA_ARROTONDAMENTO));
 				il.setC_Tax_ID(invTax.get_ID());
 			} catch (Exception e) {
-				invoice.setErrorMsg(e.getLocalizedMessage());
+				invoice.setErrorMsg(e.toString());
 				e.printStackTrace();
 				log.warning("Errore recupero imposta: " + e.getLocalizedMessage());
 			}
@@ -453,7 +453,7 @@ public class InvoiceParser {
 
 				il.setC_Tax_ID(invTax.get_ID());
 			} catch (Exception e) {
-				invoice.setErrorMsg(e.getLocalizedMessage());
+				invoice.setErrorMsg(e.toString());
 				e.printStackTrace();
 				log.warning("Errore recupero imposta: " + e.getLocalizedMessage());
 			}
