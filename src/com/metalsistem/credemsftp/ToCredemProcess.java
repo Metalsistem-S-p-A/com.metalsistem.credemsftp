@@ -184,7 +184,7 @@ public class ToCredemProcess extends SvrProcess {
 			for (MInvoice inv : einvs) {
 				MBPartner bp = new MBPartner(getCtx(), inv.getC_BPartner_ID(), null);
 				csvPrinter.printRecord(
-						"IT" + ((bp.getTaxID() != null && !bp.getTaxID().isBlank()) ? bp.getTaxID() : bp.get_ValueAsString("LIT_TaxID")),
+						"IT" + bp.getTaxID(),
 						!bp.get_ValueAsString("LIT_NationalIdNumber").isBlank() ? bp.get_ValueAsString("LIT_NationalIdNumber") : bp.get_ValueAsString("LIT_NationalIdNumber_ID"),
 						inv.getDocumentNo(),
 						inv.getDateInvoiced().toLocalDateTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")),
@@ -282,7 +282,7 @@ public class ToCredemProcess extends SvrProcess {
 				&& !einv.get_ValueAsBoolean("LIT_MsSyncCredem")
 				&& doctype.get_Value("LIT_FEPA_DOCTYPE") != null 
 //				&& (bp.get_Value("LIT_NationalIdNumber") != null || bp.get_Value("LIT_NationalIdNumber_ID") != null)
-				&& ((bp.getTaxID() != null && !bp.getTaxID().isBlank()) || bp.get_Value("LIT_TaxID") != null)
+				&& (bp.getTaxID() != null && !bp.getTaxID().isBlank())
 				&& inv.getDocumentNo() != null 
 				&& inv.getDateInvoiced() != null
 				&& inv.get_Value("VATDocumentNo") != null 
