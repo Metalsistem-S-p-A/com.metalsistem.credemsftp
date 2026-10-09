@@ -151,7 +151,7 @@ public class InvoiceParser {
 				.getIdFiscaleIVA().getIdCodice();
 
 		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name,
-				"? in (TaxID, LIT_NationalIdNumber) " + WHERE_ORG_ALL, null).setClient_ID().setParameters(codice)
+				"? in (regexp_replace(COALESCE(TaxID,''),'^[A-Za-z]{2}',''), LIT_NationalIdNumber) " + WHERE_ORG_ALL, null).setClient_ID().setParameters(codice)
 				.first();
 		if (mbp != null) {
 			MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
@@ -872,8 +872,9 @@ public class InvoiceParser {
 		MBPartner mbp = new MBPartner(Env.getCtx(), 0, null);
 		DatiAnagraficiCedenteType anagrafica = fattura.getFatturaElettronicaHeader().getCedentePrestatore()
 				.getDatiAnagrafici();
-		mbp.set_ValueOfColumn("TaxID", piva);
-		mbp.setTaxID(piva);
+		String idPaese = (anagrafica.getIdFiscaleIVA() != null && anagrafica.getIdFiscaleIVA().getIdPaese() != null)
+				? anagrafica.getIdFiscaleIVA().getIdPaese() : "";
+		mbp.setTaxID(idPaese + piva);
 		mbp.set_ValueOfColumn("LIT_NationalIdNumber",
 				!Utils.isBlank(anagrafica.getCodiceFiscale()) ? anagrafica.getCodiceFiscale() : null);
 
