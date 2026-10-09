@@ -157,13 +157,13 @@ public class InvoiceService {
 		String err = "";
 		try(StringWriter sw = new StringWriter(); PrintWriter pw = new PrintWriter(sw);) {
 			exception.printStackTrace(pw);
-			err = pw.toString();
+			err = sw.toString();
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
 		
 		if(err.length() > 500) {
-			err = err.substring(500);
+			err = err.substring(0, 500);
 		}
 		
 		backupXml(entry, inv, xml, err, trxName);
