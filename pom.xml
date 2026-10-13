@@ -53,6 +53,12 @@
 			<url>
 				file:///${repos.idempierebase}/it.cnet.impl.payment_term/target/</url>
 		</repository>
+		<repository>
+			<id>processes</id>
+			<layout>p2</layout>
+			<url>
+				file:///${repos.msplugins}/com.metalsistem.processes/target/</url>
+		</repository>
 	</repositories>
 	<dependencies>
 		<dependency>
