@@ -42,6 +42,11 @@
 			<url>file:///${repos.idempierebase}/it.idIta.impl.coreLib2/target</url>
 		</repository>
 		<repository>
+			<id>coreUtilP2</id>
+			<layout>p2</layout>
+			<url>file:///${repos.idempierebase}/it.idIta.impl.coreUtil/target</url>
+		</repository>
+		<repository>
 			<id>withholdingP2</id>
 			<layout>p2</layout>
 			<url>
