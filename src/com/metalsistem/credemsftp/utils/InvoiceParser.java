@@ -138,7 +138,7 @@ public class InvoiceParser {
 		return removeBOMIfPresent(xml);
 	}
 
-	private InvoiceReceived getInvoice(FatturaElettronicaType fattura) throws Exception {
+	private InvoiceReceived getInvoice(FatturaElettronicaType fattura, String trxName) throws Exception {
 		// TODO: Gestire caso di molteplici body(?)
 		InvoiceReceived invoice = new InvoiceReceived(new MInvoice(Env.getCtx(), 0, null));
 		FatturaElettronicaBodyType body = fattura.getFatturaElettronicaBody().get(0);
@@ -156,7 +156,7 @@ public class InvoiceParser {
 				.first();
 		if (mbp != null) {
 			MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
-					"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG + " and isSoTrx = 'N'", null).setClient_ID()
+					"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG + " and isSoTrx = 'N'", trxName).setClient_ID()
 					.setParameters(datiGeneraliDocumento.getNumero(), mbp.get_ID(),
 							toTimestamp(datiGeneraliDocumento.getData()))
 					.first();
@@ -722,6 +722,10 @@ public class InvoiceParser {
 	 *         fails
 	 */
 	public InvoiceReceived getInvoiceFromXml(byte[] xml) {
+		return getInvoiceFromXml(xml, null);
+	}
+
+	public InvoiceReceived getInvoiceFromXml(byte[] xml, String trxName) {
 		ManageXML manageXml = new ManageXML();
 		
 		InvoiceReceived inv = new InvoiceReceived(Env.getCtx(), 0, null);
@@ -731,7 +735,7 @@ public class InvoiceParser {
 		
 			FatturaElettronicaType fattura = manageXml.importFatturaElettronica(xmlReader);
 			try {
-				inv = getInvoice(fattura);
+				inv = getInvoice(fattura, trxName);
 			} catch (Exception e) {
 				e.printStackTrace();
 				if (isNewBP) {

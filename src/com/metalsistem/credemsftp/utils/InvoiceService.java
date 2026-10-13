@@ -146,7 +146,11 @@ public class InvoiceService {
 			log.info("Scadenze Fattura importate");
 
 		} else {
+			// Keep the parsed tipoDocumento: it is transient and lost when rebuilding
+			// from the existing invoice, which would break the FEPA archive validation.
+			String tipoDocumento = inv.getTipoDocumento();
 			inv = new InvoiceReceived(res);
+			inv.setTipoDocumento(tipoDocumento);
 			log.warning("Fattura %s già importata".formatted(res.getDocumentNo()));
 		}
 

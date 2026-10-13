@@ -40,7 +40,7 @@ public class AttachmentImportProcess extends SvrProcess {
 			return "No Attachments";
 		byte[] data = entries.get(0).getData();
 		byte[] parsedData = invoiceParser.getXml(data);
-		InvoiceReceived inv = invoiceParser.getInvoiceFromXml(parsedData);
+		InvoiceReceived inv = invoiceParser.getInvoiceFromXml(parsedData, trxName);
 		if (inv.getErrorMsg().isBlank()) {
 			inv = invoiceService.saveInvoice(inv,trxName);
 			invoiceService.archiveEInvoice(parsedData, inv, trxName);

@@ -150,7 +150,7 @@ public class FromCredemProcess extends SvrProcess {
 							addLog("Error parsing XML: " + e.getMessage());
 							continue;
 						}
-						inv = invoiceParser.getInvoiceFromXml(xml);
+						inv = invoiceParser.getInvoiceFromXml(xml, trxName);
 						String errorMsg = Objects.requireNonNullElse(inv.getErrorMsg(), UNKNOWN_PARSE_ERROR);
 						switch (errorMsg) {
 						case "" -> {
@@ -249,7 +249,7 @@ public class FromCredemProcess extends SvrProcess {
 			Trx trx = Trx.get(trxName, true);
 			try {
 				byte[] xml = invoiceParser.getXml(attachment.getEntry(0).getData());
-				InvoiceReceived inv = invoiceParser.getInvoiceFromXml(xml);
+				InvoiceReceived inv = invoiceParser.getInvoiceFromXml(xml, trxName);
 				String errorMsg = Objects.requireNonNullElse(inv.getErrorMsg(), UNKNOWN_PARSE_ERROR);
 				M_PendingInvoices pendingTrx = new M_PendingInvoices(getCtx(), pending.get_ID(), trxName);
 				switch (errorMsg) {

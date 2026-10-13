@@ -45,7 +45,7 @@ public class ManualImportProcess extends SvrProcess {
 		is.close();
 
 		byte[] parsedData = invoiceParser.getXml(data);
-		InvoiceReceived inv = invoiceParser.getInvoiceFromXml(parsedData);
+		InvoiceReceived inv = invoiceParser.getInvoiceFromXml(parsedData, trxName);
 		if (inv.getErrorMsg().isBlank()) {
 			inv = invoiceService.saveInvoice(inv, trxName);
 			invoiceService.archiveEInvoice(parsedData, inv, trxName);
