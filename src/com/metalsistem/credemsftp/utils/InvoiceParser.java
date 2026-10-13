@@ -30,6 +30,7 @@ import org.compiere.model.MAttachmentEntry;
 import org.compiere.model.MBPBankAccount;
 import org.compiere.model.MBPartner;
 import org.compiere.model.MBPartnerLocation;
+import com.metalsistem.processes.util.LocationMatcher;
 import org.compiere.model.MBank;
 import org.compiere.model.MCountry;
 import org.compiere.model.MCountryGroup;
@@ -924,53 +925,61 @@ public class InvoiceParser {
 	 */
 	private MBPartnerLocation getBPLocationFromEinvoice(FatturaElettronicaType fattura, MBPartner mbp) {
 		String name = mbp.getName();
-		MBPartnerLocation mbpLocation = null;
 		IndirizzoType sede = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getSede();
-		MLocation location = new Query(Env.getCtx(), MLocation.Table_Name,
-				"c_location.address1 ILIKE '%' || ? || '%' AND " + " c_location.postal = ? AND co.countrycode = ? AND "
-						+ " c_location.city ILIKE '%' || ? || '%'",
-				null).addJoinClause("JOIN c_country co on C_Location.c_country_id = co.c_country_id ")
-				.addJoinClause("JOIN c_region reg on C_Location.c_region_id = reg.c_region_id ")
-				.setParameters(sede.getIndirizzo(), sede.getCAP(), sede.getNazione(), sede.getComune()).setClient_ID()
-				.first();
-		if (location == null) {
-			mbpLocation = new MBPartnerLocation(Env.getCtx(), 0, null);
-			location = new MLocation(Env.getCtx(), 0, null);
-			String indirizzo = sede.getIndirizzo();
-			if (sede.getNumeroCivico() != null && !indirizzo.contains(sede.getNumeroCivico())) {
-				indirizzo += ", " + sede.getNumeroCivico();
+
+		String indirizzo = sede.getIndirizzo();
+		if (sede.getNumeroCivico() != null && !indirizzo.contains(sede.getNumeroCivico())) {
+			indirizzo += ", " + sede.getNumeroCivico();
+		}
+
+		// Resolve country and region of the e-invoice address
+		MCountry country = new Query(Env.getCtx(), MCountry.Table_Name, "countrycode = ?", null)
+				.setParameters(sede.getNazione()).first();
+		MRegion region = null;
+		if (country != null) {
+			region = new Query(Env.getCtx(), MRegion.Table_Name, "name = ? AND c_country_id = ?", null)
+					.setParameters(sede.getProvincia(), country.get_ID()).first();
+		}
+		int countryId = country != null ? country.get_ID() : 0;
+		int regionId = region != null ? region.get_ID() : 0;
+
+		// Reuse an existing location of this BP that matches the e-invoice address
+		LocationMatcher matcher = new LocationMatcher();
+		LocationMatcher.Location target = new LocationMatcher.Location(name, indirizzo, sede.getComune(),
+				sede.getCAP(), countryId, regionId);
+
+		MBPartnerLocation mbpLocation = null;
+		for (MBPartnerLocation loc : mbp.getLocations(true)) {
+			MLocation l = new MLocation(Env.getCtx(), loc.getC_Location_ID(), null);
+			LocationMatcher.Location candidate = new LocationMatcher.Location(loc.getName(), l.getAddress1(),
+					l.getCity(), l.getPostal(), l.getC_Country_ID(), l.getC_Region_ID());
+			if (matcher.isSameAddress(target, candidate)) {
+				mbpLocation = loc;
+				break;
 			}
+		}
+
+		// No match: create a new location for this BP
+		if (mbpLocation == null) {
+			MLocation location = new MLocation(Env.getCtx(), 0, null);
 			location.setAddress1(indirizzo);
 			location.setPostal(sede.getCAP());
 			location.setCity(sede.getComune());
-			MCountry country = new Query(Env.getCtx(), MCountry.Table_Name, "countrycode = ?", null)
-					.setParameters(sede.getNazione()).first();
-
 			if (country != null) {
 				location.setCountry(country);
-				MRegion region = new Query(Env.getCtx(), MRegion.Table_Name, "name = ? AND c_country_id = ?", null)
-						.setParameters(sede.getProvincia(), country.get_ID()).first();
 				location.setRegion(region);
 			}
 			location.saveEx();
+
+			mbpLocation = new MBPartnerLocation(Env.getCtx(), 0, null);
 			mbpLocation.setAD_Org_ID(orgId);
 			mbpLocation.setName(name + " - " + sede.getComune());
 			mbpLocation.setC_Location_ID(location.get_ID());
 			mbpLocation.setC_BPartner_ID(mbp.get_ID());
-		} else {
-			mbpLocation = new Query(Env.getCtx(), MBPartnerLocation.Table_Name,
-					"C_Location_ID = ? and C_BPartner_ID = ? " + WHERE_ORG, null).setClient_ID()
-					.setParameters(location.get_ID(), mbp.get_ID()).first();
-			if (mbpLocation == null) {
-				mbpLocation = new MBPartnerLocation(Env.getCtx(), 0, null);
-				mbpLocation.setAD_Org_ID(orgId);
-				mbpLocation.setName(name + " - " + sede.getComune());
-				mbpLocation.setC_Location_ID(location.get_ID());
-				mbpLocation.setC_BPartner_ID(mbp.get_ID());
-			}
 		}
+
 		for (MBPartnerLocation loc : mbp.getLocations(true)) {
-			if (mbpLocation != null && loc.get_ID() != mbpLocation.get_ID()) {
+			if (loc.get_ID() != mbpLocation.get_ID()) {
 				loc.setIsBillTo(false);
 				loc.setIsPayFrom(false);
 				loc.setIsRemitTo(false);
