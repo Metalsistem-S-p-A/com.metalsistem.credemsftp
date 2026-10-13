@@ -1,6 +1,7 @@
 package com.metalsistem.credemsftp.utils;
 
 import java.io.IOException;
+import java.util.Objects;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.sql.Timestamp;
@@ -221,8 +222,10 @@ public class InvoiceService {
 
 		if (PENDING_INVOICE_MSG.equals(messageKey)) {
 			M_PendingInvoices inv = (M_PendingInvoices) model;
-			String mailMsg = "Errore nella fase di import della ".concat(inv.getName()).concat("\n\n")
-					.concat(inv.getDescription());
+			String invName = Objects.requireNonNullElse(inv.getName(), "");
+			String invDescription = Objects.requireNonNullElse(inv.getDescription(), "");
+			String mailMsg = "Errore nella fase di import della ".concat(invName).concat("\n\n")
+					.concat(invDescription);
 			new EMail(MClient.get(Env.getAD_Client_ID(Env.getCtx())), "credemsftp@metalsistem.com",
 					"notificheidempiere@metalsistem.com", "Credemsftp fattura non importata", mailMsg).send();
 		}
