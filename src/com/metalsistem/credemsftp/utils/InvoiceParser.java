@@ -930,6 +930,12 @@ public class InvoiceParser {
 	private MBPartnerLocation getBPLocationFromEinvoice(FatturaElettronicaType fattura, MBPartner mbp) {
 		String name = mbp.getName();
 		IndirizzoType sede = fattura.getFatturaElettronicaHeader().getCedentePrestatore().getSede();
+		IndirizzoType stabileOrganizzazione = fattura.getFatturaElettronicaHeader().getCedentePrestatore()
+				.getStabileOrganizzazione();
+
+		if (stabileOrganizzazione != null) {
+			sede = stabileOrganizzazione;
+		}
 
 		String indirizzo = sede.getIndirizzo();
 		if (sede.getNumeroCivico() != null && !indirizzo.contains(sede.getNumeroCivico())) {
