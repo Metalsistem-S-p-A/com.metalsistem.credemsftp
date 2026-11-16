@@ -152,11 +152,12 @@ public class InvoiceParser {
 				.getIdFiscaleIVA().getIdCodice();
 
 		MBPartner mbp = new Query(Env.getCtx(), MBPartner.Table_Name,
-				"? in (regexp_replace(COALESCE(TaxID,''),'^[A-Za-z]{2}',''), LIT_NationalIdNumber) " + WHERE_ORG_ALL, null).setClient_ID().setParameters(codice)
-				.first();
+				"? in (regexp_replace(COALESCE(TaxID,''),'^[A-Za-z]{2}',''), LIT_NationalIdNumber) " + WHERE_ORG_ALL,
+				null).setClient_ID().setParameters(codice).first();
 		if (mbp != null) {
 			MInvoice res = new Query(Env.getCtx(), MInvoice.Table_Name,
-					"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG + " and isSoTrx = 'N'", trxName).setClient_ID()
+					"DocumentNo = ? and C_BPartner_ID = ? and DateInvoiced = ?" + WHERE_ORG + " and isSoTrx = 'N'",
+					trxName).setClient_ID()
 					.setParameters(datiGeneraliDocumento.getNumero(), mbp.get_ID(),
 							toTimestamp(datiGeneraliDocumento.getData()))
 					.first();
@@ -252,21 +253,21 @@ public class InvoiceParser {
 				switch (sconto.getTipo()) {
 				case MG -> {
 					if (percentuale != null)
-						price = price.add(price.multiply(percentuale)
-								.divide(BigDecimal.valueOf(100),price.scale(), RoundingMode.HALF_UP));
+						price = price.add(price.multiply(percentuale).divide(BigDecimal.valueOf(100), price.scale(),
+								RoundingMode.HALF_UP));
 					if (importo != null)
 						price = price.add(importo);
 				}
 				case SC -> {
 					if (percentuale != null)
-						price = price.subtract(price.multiply(percentuale)
-								.divide(BigDecimal.valueOf(100),price.scale(), RoundingMode.HALF_UP));
+						price = price.subtract(price.multiply(percentuale).divide(BigDecimal.valueOf(100),
+								price.scale(), RoundingMode.HALF_UP));
 					if (importo != null)
 						price = price.subtract(importo);
 				}
 				}
 			}
-			price = price.setScale(3,RoundingMode.HALF_UP);
+			price = price.setScale(3, RoundingMode.HALF_UP);
 			il.setPrice(price);
 			il.setLine(linea.getNumeroLinea() * 10); // iDempiere Standard
 			il.setDescription(linea.getDescrizione());
@@ -728,12 +729,12 @@ public class InvoiceParser {
 
 	public InvoiceReceived getInvoiceFromXml(byte[] xml, String trxName) {
 		ManageXML manageXml = new ManageXML();
-		
+
 		InvoiceReceived inv = new InvoiceReceived(Env.getCtx(), 0, null);
-		try(ByteArrayInputStream bais = new ByteArrayInputStream(xml)) {
+		try (ByteArrayInputStream bais = new ByteArrayInputStream(xml)) {
 			XMLInputFactory factory = XMLInputFactory.newFactory();
 			XMLStreamReader xmlReader = factory.createXMLStreamReader(bais);
-		
+
 			FatturaElettronicaType fattura = manageXml.importFatturaElettronica(xmlReader);
 			try {
 				inv = getInvoice(fattura, trxName);
@@ -742,8 +743,8 @@ public class InvoiceParser {
 				if (isNewBP) {
 					bp.delete(false);
 					log.warning("Errore parsing fattura, nuovo BP eliminato: " + e.getLocalizedMessage());
-					inv.setErrorMsg("Errore durante la lettura della fattura");
 				}
+				inv.setErrorMsg("Errore durante la lettura della fattura: " + e.getMessage());
 			}
 		} catch (IOException | XMLStreamException e1) {
 			e1.printStackTrace();
@@ -790,7 +791,8 @@ public class InvoiceParser {
 			res = taxes.stream()
 					.filter(tax -> tax.get_ValueAsString(LIT_XML_INVOICE_TAX_TYPE).startsWith(natura.value())
 							&& tax.get_ValueAsBoolean(IS_DISPLAYED) && tax.get_ValueAsBoolean(LIT_IS_DEFAULT_TAX)
-							&& new MTaxCategory(Env.getCtx(), tax.getC_TaxCategory_ID(), null).getName().contains("Reverse charge"))
+							&& new MTaxCategory(Env.getCtx(), tax.getC_TaxCategory_ID(), null).getName()
+									.contains("Reverse charge"))
 					.findFirst();
 			if (res.isPresent())
 				return res.get();
@@ -798,7 +800,8 @@ public class InvoiceParser {
 			res = taxes.stream()
 					.filter(tax -> tax.get_ValueAsString(LIT_XML_INVOICE_TAX_TYPE).startsWith(natura.value())
 							&& !tax.get_ValueAsBoolean(IS_DISPLAYED)
-							&& new MTaxCategory(Env.getCtx(), tax.getC_TaxCategory_ID(), null).getName().contains("Reverse charge"))
+							&& new MTaxCategory(Env.getCtx(), tax.getC_TaxCategory_ID(), null).getName()
+									.contains("Reverse charge"))
 					.findFirst();
 			if (res.isPresent())
 				if (res.get().getParent_Tax_ID() > 0 && !res.get().get_ValueAsBoolean(LIT_IS_DEFAULT_TAX))
@@ -879,7 +882,8 @@ public class InvoiceParser {
 		DatiAnagraficiCedenteType anagrafica = fattura.getFatturaElettronicaHeader().getCedentePrestatore()
 				.getDatiAnagrafici();
 		String idPaese = (anagrafica.getIdFiscaleIVA() != null && anagrafica.getIdFiscaleIVA().getIdPaese() != null)
-				? anagrafica.getIdFiscaleIVA().getIdPaese() : "";
+				? anagrafica.getIdFiscaleIVA().getIdPaese()
+				: "";
 		mbp.setTaxID(idPaese + piva);
 		mbp.set_ValueOfColumn("LIT_NationalIdNumber",
 				!Utils.isBlank(anagrafica.getCodiceFiscale()) ? anagrafica.getCodiceFiscale() : null);
@@ -956,8 +960,8 @@ public class InvoiceParser {
 
 		// Reuse an existing location of this BP that matches the e-invoice address
 		LocationMatcher matcher = new LocationMatcher();
-		LocationMatcher.Location target = new LocationMatcher.Location(name, indirizzo, sede.getComune(),
-				sede.getCAP(), countryId, regionId);
+		LocationMatcher.Location target = new LocationMatcher.Location(name, indirizzo, sede.getComune(), sede.getCAP(),
+				countryId, regionId);
 
 		MBPartnerLocation mbpLocation = null;
 		for (MBPartnerLocation loc : mbp.getLocations(true)) {
