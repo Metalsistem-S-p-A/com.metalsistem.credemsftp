@@ -252,20 +252,21 @@ public class InvoiceParser {
 				switch (sconto.getTipo()) {
 				case MG -> {
 					if (percentuale != null)
-						price = linea.getPrezzoUnitario().add(linea.getPrezzoUnitario().multiply(percentuale)
-								.divide(BigDecimal.valueOf(100), RoundingMode.HALF_UP));
+						price = price.add(price.multiply(percentuale)
+								.divide(BigDecimal.valueOf(100),price.scale(), RoundingMode.HALF_UP));
 					if (importo != null)
-						price = linea.getPrezzoUnitario().add(importo);
+						price = price.add(importo);
 				}
 				case SC -> {
 					if (percentuale != null)
-						price = linea.getPrezzoUnitario().subtract(linea.getPrezzoUnitario().multiply(percentuale)
-								.divide(BigDecimal.valueOf(100), RoundingMode.HALF_UP));
+						price = price.subtract(price.multiply(percentuale)
+								.divide(BigDecimal.valueOf(100),price.scale(), RoundingMode.HALF_UP));
 					if (importo != null)
-						price = linea.getPrezzoUnitario().subtract(importo);
+						price = price.subtract(importo);
 				}
 				}
 			}
+			price = price.setScale(3,RoundingMode.HALF_UP);
 			il.setPrice(price);
 			il.setLine(linea.getNumeroLinea() * 10); // iDempiere Standard
 			il.setDescription(linea.getDescrizione());
